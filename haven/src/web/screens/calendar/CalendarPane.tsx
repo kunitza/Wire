@@ -120,6 +120,6 @@ export function usePaneNav(view: CalendarView, anchor: string) {
   return {
     step: (dir: number) => stepAnchor(view, anchor, dir, s, opts),
     isCurrent: isCurrentPeriod(view, anchor, today, s, opts),
-    label: periodLabel(view, anchor, s, false, opts),
+    label: periodLabel(view, anchor, s, true, opts),
   };
 }

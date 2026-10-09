@@ -254,15 +254,18 @@ export function EventForm({ event, date, time, allDay: allDayDefault, profileIds
           <span className="muted">{emoji ? "Countdown emoji" : "Pick an emoji, or we'll choose one from the title."}</span>
         </div>
       )}
-      <Field label="Reminder">
-        <select className="select" value={reminder} onChange={(e) => setReminder(e.target.value)}>
-          {REMINDERS.map((r) => (
-            <option key={r.value} value={r.value}>
-              {r.value === "default" ? `Default (${defaultReminderText(settings.reminders)})` : r.label}
-            </option>
-          ))}
-        </select>
-      </Field>
+      {/* Reminders only pop up for timed events, so don't offer one for all-day events. */}
+      {!allDay && (
+        <Field label="Reminder">
+          <select className="select" value={reminder} onChange={(e) => setReminder(e.target.value)}>
+            {REMINDERS.map((r) => (
+              <option key={r.value} value={r.value}>
+                {r.value === "default" ? `Default (${defaultReminderText(settings.reminders)})` : r.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
       <Field label="Location">
         <input className="input" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Add a place" />
       </Field>

@@ -52,7 +52,8 @@ export default function HomeScreen() {
         <section className="panel home-cal" aria-label="Calendar">
           <div className="panel-head">
             <Calendar />
-            <span className="home-cal-label">Calendar</span>
+            {/* While browsing away from today, say which period is shown (the header keeps today's date). */}
+            <span className="home-cal-label truncate" style={{ minWidth: 0 }}>{nav.isCurrent ? "Calendar" : nav.label}</span>
             <span className="spacer" />
             <button className="pill sm" onClick={(e) => setViewMenu(e.currentTarget)} style={{ textTransform: "none", letterSpacing: 0 }}>
               {VIEWS.find((v) => v.id === view)?.label}

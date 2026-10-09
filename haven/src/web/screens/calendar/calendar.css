@@ -193,9 +193,10 @@
 
 /* ---------- Details & form ---------- */
 .cal-details .modal-head h2 { font-size: calc(32px * var(--fs)); }
-.cal-dtitle { display: inline-flex; align-items: center; gap: 12px; overflow-wrap: anywhere; }
-.cal-dswatch { width: 16px; height: 16px; border-radius: 99px; flex: none; }
+.cal-dtitle { display: block; overflow-wrap: anywhere; }
+.cal-dswatch { display: inline-block; width: 16px; height: 16px; border-radius: 99px; margin-right: 12px; vertical-align: 0.12em; }
 .cal-drow { display: flex; gap: 14px; align-items: flex-start; font-size: calc(18px * var(--fs)); line-height: 1.4; }
+.cal-drow > .grow { min-width: 0; overflow-wrap: anywhere; }
 .cal-drow-icon { width: 26px; flex: none; color: var(--text-2); display: flex; justify-content: center; padding-top: 1px; }
 .cal-drow-icon svg { width: 22px; height: 22px; }
 .cal-person { display: inline-flex; align-items: center; gap: 8px; padding: 4px 14px 4px 4px; border-radius: 99px; font-weight: 500; }
@@ -275,3 +276,13 @@
 .cal-timed > * { flex-shrink: 0; }
 .cal-pane .cal-timed:not(.short):not(.narrow) { padding: 4px 8px; }
 .cal-pane .cal-timed-row { margin-top: 0; }
+.cal-pane .cal-week.list { padding: 0 12px 24px; }
+.cal-pane .cal-week.list .cal-wcell { padding: 10px 0; }
+.cal-pane .cal-pmonth { padding-bottom: 24px; }
+/* Narrow week cells (Home panel at 1280px): let "+ Add Event" drop under the count instead of overlapping it. */
+.cal-wcell-sub { flex-wrap: wrap; row-gap: 0; }
+.cal-wcell-sub > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.cal-wcell-sub .cal-add { flex: none; padding-left: 0; }
+@media (max-width: 820px) {
+  .cal-details .modal-head h2 { font-size: 24px; }
+}

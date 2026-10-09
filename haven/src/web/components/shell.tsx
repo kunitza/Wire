@@ -119,8 +119,13 @@ export function Header({ children, title }: { children?: ReactNode; title?: Reac
   const name = settings.displayName.trim();
   return (
     <header className="header">
-      <div className="date">{title ?? (name || headerDate(today))}</div>
-      <div className="time">{clock(now, settings.clock24h)}</div>
+      {/* A long display name truncates instead of pushing the screen's controls off the edge. */}
+      <div className="date" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", lineHeight: 1.2 }}>
+        {title ?? (name || headerDate(today))}
+      </div>
+      <div className="time" style={{ flex: "none" }}>
+        {clock(now, settings.clock24h)}
+      </div>
       {weather.current ? (
         <div className="wx hide-phone" title="Weather">
           <span className="wx-icon">{weatherEmoji(weather.current.code, weather.current.isDay)}</span>
@@ -131,7 +136,9 @@ export function Header({ children, title }: { children?: ReactNode; title?: Reac
           <AlertCircle />
         </button>
       )}
-      <div className="controls">{children}</div>
+      <div className="controls" style={{ flex: "none" }}>
+        {children}
+      </div>
     </header>
   );
 }

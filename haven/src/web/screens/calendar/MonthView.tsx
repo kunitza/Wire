@@ -22,7 +22,8 @@ type Single = { kind: "event"; e: CalendarEvent } | { kind: "meal"; m: Meal };
 
 export function MonthView(props: Props) {
   const { isPhone } = useApp();
-  if (isPhone && !props.compact) return <PhoneMonth {...props} />;
+  // Phones (including the Home panel) get dots + the chosen day's agenda; chips don't fit 7 columns at phone width.
+  if (isPhone) return <PhoneMonth {...props} />;
   return <GridMonth {...props} />;
 }
 

@@ -19,7 +19,8 @@ export function WeekView({ from, events, meals, compact, onNextWeek }: Props) {
   const { addEvent } = useCalActions();
   const days = useMemo(() => eachDay(from, addDays(from, 7)), [from]);
   const next = addDays(from, 7);
-  const list = isPhone && !compact;
+  // Phones (including the Home panel) get a one-column list: 4 columns don't fit at phone width.
+  const list = isPhone;
 
   return (
     <div className={`cal-week ${list ? "list" : ""} ${compact ? "compact" : ""}`}>
