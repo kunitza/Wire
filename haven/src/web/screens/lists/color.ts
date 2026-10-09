@@ -2,7 +2,15 @@
 
 function hexToHsl(hex: string): [number, number, number] {
   const h = hex.replace("#", "");
-  const n = parseInt(h.length === 3 ? h.split("").map((c) => c + c).join("") : h.slice(0, 6), 16);
+  const n = parseInt(
+    h.length === 3
+      ? h
+          .split("")
+          .map((c) => c + c)
+          .join("")
+      : h.slice(0, 6),
+    16,
+  );
   const r = ((n >> 16) & 255) / 255;
   const g = ((n >> 8) & 255) / 255;
   const b = (n & 255) / 255;

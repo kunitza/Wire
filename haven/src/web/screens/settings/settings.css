@@ -54,6 +54,7 @@
 .set-status.warn { color: #b7791f; }
 .set-slider { accent-color: var(--blue); width: 100%; height: 36px; }
 .set-back { display: none; }
+.set-menu-title { display: none; }
 .set-shortcut {
   display: grid; grid-template-columns: 44px 1fr; gap: 12px; align-items: center; background: #fff; border-radius: 16px; padding: 10px 14px; border: 1.5px solid var(--line);
 }
@@ -77,6 +78,7 @@
   .set-title { font-size: 32px; }
   .set-lead { margin-top: -20px; font-size: 15px; }
   .set-inner { gap: 24px; }
+  .set-menu-title { display: block; margin: 0 0 12px 4px; }
   .set-back { display: inline-flex; align-self: flex-start; margin-bottom: -16px; }
   .set-row { padding: 10px 14px; }
   .set-choice { flex-wrap: wrap; }
@@ -87,3 +89,5 @@
   .set-input-row { flex-wrap: wrap; }
   .set-code { font-size: 12px; }
 }
+.set-spin { animation: set-spin 1s linear infinite; }
+@keyframes set-spin { to { transform: rotate(360deg); } }

@@ -18,6 +18,7 @@ import * as weather from "./lib/weather.js";
 import * as ai from "./lib/ai.js";
 import * as email from "./lib/email.js";
 import { homeAssistantYaml, runVoiceCommand } from "./lib/voice.js";
+import { seedDemo } from "./seed.js";
 import { addDays, localDateOf } from "../shared/dates.js";
 import type { ChangeTopic, EditScope } from "../shared/types.js";
 
@@ -48,7 +49,8 @@ export async function buildApp(ctx: Ctx) {
 
   // Every browser gets a long-lived session id; Parental Lock unlocks are tracked per session.
   app.addHook("onRequest", async (req, reply) => {
-    if (!req.url.startsWith("/api/") || req.url.startsWith("/api/voice/")) return;
+    // Voice commands (Siri/Home Assistant) authenticate with a token and need no browser session.
+    if (!req.url.startsWith("/api/") || req.url.startsWith("/api/voice/command")) return;
     let sid = req.cookies[COOKIE];
     if (!sid || !settings.sessionExists(ctx, sid)) {
       sid = settings.newSessionToken(ctx);
@@ -132,8 +134,24 @@ export async function buildApp(ctx: Ctx) {
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   }));
   app.get("/api/settings", async () => settings.getSettings(ctx));
-  app.put("/api/settings", modify, async (req) => {
+  // View preferences (filters, Home layout) can be changed while locked, like Skylight's filters.
+  const VIEW_ONLY: Record<string, string[] | true> = {
+    tasks: true,
+    home: true,
+    calendar: ["hiddenProfiles", "showTaskProgress", "showWeather", "showMeals"],
+  };
+  const viewOnly = (patch: Record<string, unknown>) =>
+    Object.keys(patch).length > 0 &&
+    Object.entries(patch).every(([k, v]) => {
+      const allow = VIEW_ONLY[k];
+      if (allow === true) return true;
+      if (!allow || !v || typeof v !== "object") return false;
+      const cur = settings.getSettings(ctx)[k as "calendar"] as unknown as Record<string, unknown>;
+      return Object.entries(v as object).every(([sub, val]) => allow.includes(sub) || JSON.stringify(cur[sub]) === JSON.stringify(val));
+    });
+  app.put("/api/settings", async (req) => {
     const patch = (req.body ?? {}) as Record<string, unknown>;
+    if (!viewOnly(patch) && !settings.mayEdit(ctx, sid(req), "modify")) throw new HttpError(423, "Locked. Enter the parent PIN to make changes.");
     const before = settings.getSettings(ctx);
     settings.updateSettings(ctx, patch);
     const after = settings.getSettings(ctx);
@@ -177,6 +195,14 @@ export async function buildApp(ctx: Ctx) {
     if (!profileIds?.length || !Number.isFinite(delta) || delta === 0) throw new HttpError(400, "Choose profiles and an amount");
     for (const id of profileIds) profiles.adjustStars(ctx, num(id), delta, reason ?? (delta > 0 ? "Bonus stars" : "Stars removed"));
     return profiles.listProfiles(ctx);
+  });
+  // First-run "try it with a demo family" (onboarding). Only on an empty household.
+  app.post("/api/demo", add, async () => {
+    if (profiles.listProfiles(ctx).length) throw new HttpError(409, "Haven already has profiles");
+    seedDemo(ctx);
+    ctx.bus.emit("profiles", "events", "tasks", "rewards", "lists", "meals", "recipes", "settings");
+    weather.refreshWeather(ctx).catch(() => undefined);
+    return { ok: true };
   });
   app.get("/api/profiles/:id/ledger", async (req) => profiles.starLedger(ctx, num((req.params as { id: string }).id)));
 

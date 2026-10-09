@@ -186,6 +186,10 @@ describe("parental lock", () => {
     await ok("POST", "/api/session/lock");
     expect((await call("POST", "/api/tasks", chore({ title: "x" }))).status).toBe(423);
     expect((await call("PUT", "/api/settings", { funMode: false })).status).toBe(423);
+    // Filters are view preferences and stay usable while locked.
+    expect((await call("PUT", "/api/settings", { tasks: { showCompleted: false } })).status).toBe(200);
+    expect((await call("PUT", "/api/settings", { calendar: { hiddenProfiles: [emma.id] } })).status).toBe(200);
+    expect((await call("PUT", "/api/settings", { calendar: { shadeWeekends: true } })).status).toBe(423);
     await ok("POST", `/api/tasks/${t.id}/complete`, { occurrence: "2026-10-07", slot: emma.id });
     const lists = await ok("GET", "/api/lists");
     await ok("POST", `/api/lists/${lists.lists[0].id}/items`, { text: "Milk" });
@@ -295,6 +299,14 @@ describe("events", () => {
   });
 });
 
+describe("demo family", () => {
+  it("seeds only an empty household", async () => {
+    await ok("POST", "/api/demo");
+    expect((await ok("GET", "/api/profiles")).length).toBeGreaterThan(3);
+    expect((await call("POST", "/api/demo")).status).toBe(409);
+  });
+});
+
 describe("voice", () => {
   async function setup() {
     const { emma, jake } = await family();
@@ -344,6 +356,14 @@ describe("voice", () => {
     expect((await say("add milk and eggs to the grocery list")).speech).toBe("Added milk and eggs to Grocery List.");
     const lists = await ok("GET", "/api/lists");
     expect(lists.items.map((i: { text: string }) => i.text)).toEqual(["Milk", "Eggs"]);
+  });
+
+  it("lets an unlocked browser see the voice setup while Parental Lock is on", async () => {
+    await ok("POST", "/api/pin", { pin: "1234" });
+    await ok("PUT", "/api/settings", { lock: { enabled: true } });
+    expect((await ok("GET", "/api/voice/setup")).token).toBeTruthy();
+    await ok("POST", "/api/session/lock");
+    expect((await call("GET", "/api/voice/setup")).status).toBe(423);
   });
 
   it("generates Home Assistant config", async () => {

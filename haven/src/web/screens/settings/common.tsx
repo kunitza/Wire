@@ -82,8 +82,12 @@ export function ChoiceRow<T extends string | number>({
   );
 }
 
-export function Steps({ children }: { children: ReactNode }) {
-  return <ol className="set-steps">{children}</ol>;
+export function Steps({ children, start = 1 }: { children: ReactNode; start?: number }) {
+  return (
+    <ol className="set-steps" style={start > 1 ? { counterReset: `step ${start - 1}` } : undefined}>
+      {children}
+    </ol>
+  );
 }
 
 /** Copy text; falls back to execCommand because the Pi is usually reached over plain http (no Clipboard API). */
