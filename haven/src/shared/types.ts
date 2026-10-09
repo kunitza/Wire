@@ -193,6 +193,9 @@ export interface Meal {
   notes: string;
   repeat: Repeat;
   recurring: boolean;
+  /** First date of the (repeating) meal series; equals `date` for one-off meals. */
+  seriesStart?: string;
+  repeatUntil?: string | null;
 }
 
 export interface Recipe {

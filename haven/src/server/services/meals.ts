@@ -169,7 +169,7 @@ export function mealsInRange(ctx: Ctx, from: string, to: string): Meal[] {
   for (const r of rows) {
     const repeat = json.parse<Repeat>(r.repeat, { type: "none" });
     const ex = json.parse<string[]>(r.exdates, []);
-    const base = { id: r.id, categoryId: r.category_id, title: r.title, recipeId: r.recipe_id, notes: r.notes, repeat };
+    const base = { id: r.id, categoryId: r.category_id, title: r.title, recipeId: r.recipe_id, notes: r.notes, repeat, seriesStart: r.date, repeatUntil: r.repeat_until };
     if (repeat.type === "none") {
       if (r.date >= from && r.date < to) out.push({ ...base, key: `meal:${r.id}`, date: r.date, recurring: false });
       continue;
