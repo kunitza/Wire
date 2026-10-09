@@ -34,6 +34,47 @@ function floating(w: string): Date {
 
 const floatToWall = (d: Date) => d.toISOString().slice(0, 16);
 
+/** The event's IANA time zone (from TZID), if the runtime knows it. UTC events expand in UTC. */
+function eventZone(ev: ical.VEvent): string | null {
+  const tz = (ev.start as Date & { tz?: string }).tz;
+  if (!tz) return null;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return tz;
+  } catch {
+    return null; // e.g. a non-standard Windows zone name: fall back to household time
+  }
+}
+
+const zoneFormatters = new Map<string, Intl.DateTimeFormat>();
+/** Absolute instant -> wall clock "YYYY-MM-DDTHH:MM" in the given zone. */
+function wallIn(d: Date, zone: string): string {
+  let f = zoneFormatters.get(zone);
+  if (!f) {
+    f = new Intl.DateTimeFormat("en-CA", { timeZone: zone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+    zoneFormatters.set(zone, f);
+  }
+  const p = Object.fromEntries(f.formatToParts(d).map((x) => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day}T${p.hour === "24" ? "00" : p.hour}:${p.minute}`;
+}
+
+/** Wall clock in `zone` -> absolute instant (handles DST; times in a spring-forward gap move forward). */
+function instantFromWall(w: string, zone: string): Date {
+  const guess = floating(w).getTime();
+  let t = guess - (floating(wallIn(new Date(guess), zone)).getTime() - guess);
+  const off2 = floating(wallIn(new Date(t), zone)).getTime() - t;
+  t = guess - off2;
+  return new Date(t);
+}
+
+/** Household-local wall clock -> instant. */
+function localInstant(w: string): Date {
+  const [date, time] = w.split("T");
+  const [y, m, d] = date.split("-").map(Number);
+  const [hh, mm] = time.split(":").map(Number);
+  return new Date(y, m - 1, d, hh, mm);
+}
+
 function text(v: unknown): string | null {
   if (v == null) return null;
   if (typeof v === "string") return v;
@@ -102,36 +143,38 @@ export function expandIcs(body: string, from: string, to: string): ParsedEvent[]
       continue;
     }
 
-    // Expand the rule in floating time anchored at the household-local wall clock.
-    const startWall = allDay ? localDateOf(ev.start) + "T00:00" : wall(ev.start);
+    // Expand the rule in "floating" wall-clock time in the event's own time zone (so "9:00 every
+    // Tuesday in London" stays 9:00 London across both countries' DST changes), then convert each
+    // occurrence to the household's local time. All-day events are plain dates.
+    const zone = allDay ? null : eventZone(ev);
+    const toWallZ = (d: Date) => (allDay ? localDateOf(d) + "T00:00" : zone ? wallIn(d, zone) : wall(d));
+    // Identity of an occurrence: its date (all-day) or its absolute start minute.
+    const keyOf = (d: Date) => (allDay ? localDateOf(d) : d.toISOString().slice(0, 16));
     const orig = { ...ev.rrule.origOptions };
     delete orig.dtstart;
     delete orig.tzid;
-    if (orig.until) orig.until = floating(allDay ? localDateOf(orig.until) + "T23:59" : wall(orig.until));
+    if (orig.until) orig.until = floating(allDay ? localDateOf(orig.until) + "T23:59" : toWallZ(orig.until));
     let rule: InstanceType<typeof RRule>;
     try {
-      rule = new RRule({ ...orig, dtstart: floating(startWall) });
+      rule = new RRule({ ...orig, dtstart: floating(toWallZ(ev.start)) });
     } catch {
       continue;
     }
-    const spanDays = Math.ceil(durMin / 1440) + 1;
-    const windowStart = floating(addDays(from, -spanDays) + "T00:00");
-    const windowEnd = floating(to + "T00:00");
-    const starts = rule.between(windowStart, windowEnd, true);
+    const spanDays = Math.ceil(durMin / 1440) + 2;
+    const starts = rule.between(floating(addDays(from, -spanDays) + "T00:00"), floating(addDays(to, 1) + "T00:00"), true);
 
     const exKeys = new Set<string>();
-    for (const x of Object.values((ev.exdate ?? {}) as Record<string, Date>)) {
-      if (x instanceof Date) exKeys.add(allDay ? localDateOf(x) : wall(x));
-    }
+    for (const x of Object.values((ev.exdate ?? {}) as Record<string, Date>)) if (x instanceof Date) exKeys.add(keyOf(x));
     const overrides = new Map<string, ical.VEvent>();
     for (const r of Object.values((ev.recurrences ?? {}) as Record<string, ical.VEvent>)) {
       const rid = r.recurrenceid as Date | undefined;
-      if (rid instanceof Date) overrides.set(allDay ? localDateOf(rid) : wall(rid), r);
+      if (rid instanceof Date) overrides.set(keyOf(rid), r);
     }
 
     for (const o of starts) {
-      const sw = floatToWall(o);
-      const k = allDay ? sw.slice(0, 10) : sw;
+      const occWall = floatToWall(o);
+      const instant = allDay ? null : zone ? instantFromWall(occWall, zone) : localInstant(occWall);
+      const k = allDay ? occWall.slice(0, 10) : instant!.toISOString().slice(0, 16);
       if (exKeys.has(k)) continue;
       const ov = overrides.get(k);
       if (ov) {
@@ -141,25 +184,10 @@ export function expandIcs(body: string, from: string, to: string): ParsedEvent[]
         if (overlaps(p)) out.push(p);
         continue;
       }
+      const base = { key: `${uid}@${k}`, title: text(ev.summary)?.trim() || "(No title)", location: text(ev.location), notes: text(ev.description) };
       const p: ParsedEvent = allDay
-        ? {
-            key: `${uid}@${k}`,
-            title: text(ev.summary)?.trim() || "(No title)",
-            allDay: true,
-            start: k,
-            end: addDays(k, Math.max(1, Math.round(durMin / 1440))),
-            location: text(ev.location),
-            notes: text(ev.description),
-          }
-        : {
-            key: `${uid}@${k}`,
-            title: text(ev.summary)?.trim() || "(No title)",
-            allDay: false,
-            start: sw,
-            end: addMinutesWall(sw, durMin),
-            location: text(ev.location),
-            notes: text(ev.description),
-          };
+        ? { ...base, allDay: true, start: k, end: addDays(k, Math.max(1, Math.round(durMin / 1440))) }
+        : { ...base, allDay: false, start: wall(instant!), end: wall(new Date(instant!.getTime() + durMin * 60000)) };
       if (overlaps(p)) out.push(p);
     }
     // Overrides moved to a time outside the generated set (e.g. moved from a date outside the window).

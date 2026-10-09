@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CalendarDays, SlidersHorizontal, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Pencil, Plus, Sparkles } from "lucide-react";
 import type { Meal, MealCategory, Recipe } from "../../../shared/types";
 import { addDays, eachDay, startOfWeek } from "../../../shared/dates";
@@ -15,6 +15,14 @@ import "./meals.css";
 export default function MealsScreen() {
   const { today, settings, mealCategories, isPhone } = useApp();
   const [anchor, setAnchor] = useState(today);
+  // The wall display stays open overnight: follow "today" at midnight unless the user paged away.
+  const lastToday = useRef(today);
+  useEffect(() => {
+    if (lastToday.current !== today) {
+      setAnchor((a) => (a === lastToday.current ? today : a));
+      lastToday.current = today;
+    }
+  }, [today]);
   const weekStart = startOfWeek(anchor, settings.weekStartsOn);
   const days = eachDay(weekStart, addDays(weekStart, 7));
   const { data: meals } = useLive<Meal[]>(`/api/meals?from=${weekStart}&to=${addDays(weekStart, 7)}`, ["meals", "recipes"]);

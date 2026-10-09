@@ -245,14 +245,27 @@ export function PinPad() {
 
 export function Toasts() {
   const { toasts } = useApp();
+  // Tapping a toast's action (e.g. Undo) runs it once and hides the toast.
+  const [done, setDone] = useState<Set<number>>(() => new Set());
   return createPortal(
     <div className="toast-wrap" role="status" aria-live="polite">
-      {toasts.map((t) => (
-        <div key={t.id} className="toast">
-          {t.text}
-          {t.action && <button onClick={t.action.run}>{t.action.label}</button>}
-        </div>
-      ))}
+      {toasts
+        .filter((t) => !done.has(t.id))
+        .map((t) => (
+          <div key={t.id} className="toast">
+            {t.text}
+            {t.action && (
+              <button
+                onClick={() => {
+                  setDone((d) => new Set(d).add(t.id));
+                  t.action!.run();
+                }}
+              >
+                {t.action.label}
+              </button>
+            )}
+          </div>
+        ))}
     </div>,
     document.body,
   );

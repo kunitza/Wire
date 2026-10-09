@@ -39,3 +39,53 @@ describe("expandIcs", () => {
     expect(byTitle("Emma's birthday").map((e) => e.start)).toEqual(["2027-04-12"]);
   });
 });
+
+describe("expandIcs across time zones", () => {
+  const london = `BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VTIMEZONE
+TZID:Europe/London
+BEGIN:DAYLIGHT
+TZOFFSETFROM:+0000
+TZOFFSETTO:+0100
+DTSTART:19700329T010000
+RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU
+END:DAYLIGHT
+BEGIN:STANDARD
+TZOFFSETFROM:+0100
+TZOFFSETTO:+0000
+DTSTART:19701025T020000
+RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU
+END:STANDARD
+END:VTIMEZONE
+BEGIN:VEVENT
+DTSTART;TZID=Europe/London:20261013T090000
+DTEND;TZID=Europe/London:20261013T100000
+RRULE:FREQ=WEEKLY;BYDAY=TU
+EXDATE;TZID=Europe/London:20261110T090000
+UID:standup@example.com
+SUMMARY:London standup
+END:VEVENT
+BEGIN:VEVENT
+DTSTART;TZID=Europe/London:20261117T110000
+DTEND;TZID=Europe/London:20261117T120000
+RECURRENCE-ID;TZID=Europe/London:20261117T090000
+UID:standup@example.com
+SUMMARY:London standup (moved)
+END:VEVENT
+END:VCALENDAR`;
+
+  it("keeps a London 9am meeting at 9am London time through both DST changes (shown in New York time)", () => {
+    const ev = expandIcs(london, "2026-10-12", "2026-11-25");
+    const starts = ev.map((e) => `${e.title}@${e.start}`);
+    expect(starts).toEqual([
+      "London standup@2026-10-13T04:00", // BST & EDT: 08:00Z
+      "London standup@2026-10-20T04:00",
+      "London standup@2026-10-27T05:00", // UK back on GMT, US still EDT: 09:00Z
+      "London standup@2026-11-03T04:00", // both on standard time
+      // 11-10 excluded by EXDATE
+      "London standup (moved)@2026-11-17T06:00",
+      "London standup@2026-11-24T04:00",
+    ]);
+  });
+});
