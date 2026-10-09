@@ -91,7 +91,9 @@ export function listRedemptions(ctx: Ctx, limit = 100): Redemption[] {
     .all(limit) as unknown as Redemption[];
 }
 
+/** Approve or decline a pending request (declining returns the stars). Already-decided requests can't flip. */
 export function setRedemptionStatus(ctx: Ctx, id: number, status: "approved" | "declined") {
-  ctx.db.prepare("UPDATE redemptions SET status = ? WHERE id = ?").run(status, id);
+  const res = ctx.db.prepare("UPDATE redemptions SET status = ? WHERE id = ? AND status = 'pending'").run(status, id);
   ctx.bus.emit("rewards", "stars", "profiles");
+  if (!Number(res.changes)) throw new RewardError("This request was already handled");
 }

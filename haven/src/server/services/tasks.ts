@@ -316,12 +316,13 @@ export function taskInstances(ctx: Ctx, from: string, to: string, opts: { kind?:
         if (!occursOn(task.repeat, anchor, date, task.repeatUntil)) continue;
         const c = byKey.get(ckey(task.id, date, "", s));
         if (date < today && !c) continue; // missed: handled by roll-over below
-        if (c && c.day !== date) continue; // completed late: shown on the day it was checked
+        if (c && c.day > date) continue; // completed late: shown on the day it was checked
         push(task, date, date, null, slot, false);
       }
       // Late completions of earlier occurrences that were checked off inside the range.
+      // (An occurrence checked off or skipped ahead of time stays on its own day, above.)
       for (const c of comps) {
-        if (c.task_id === task.id && c.slot === s && c.part === "" && c.day !== c.occurrence && inRange(c.day))
+        if (c.task_id === task.id && c.slot === s && c.part === "" && c.day > c.occurrence && inRange(c.day))
           push(task, c.day, c.occurrence, null, slot, true);
       }
       // Roll the latest missed occurrence forward onto today (until the next one is due).

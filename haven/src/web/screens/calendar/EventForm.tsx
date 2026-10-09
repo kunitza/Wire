@@ -222,6 +222,8 @@ export function EventForm({ event, date, time, allDay: allDayDefault, profileIds
         on={allDay}
         onChange={(v) => {
           setAllDay(v);
+          // A short timed event that ends after midnight (e.g. the 11 PM default) is still a one-day all-day event.
+          if (v && ed > sd && minutesBetween(sd, st, ed, et) < 1440) setEd(sd);
           if (!v && ed === sd && minutesBetween(sd, st, ed, et) <= 0) {
             const [d2, t2] = addMinutes(sd, st, 60);
             setEd(d2);

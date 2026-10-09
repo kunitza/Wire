@@ -375,6 +375,17 @@ export function RepeatEditor({
 }) {
   const on = value.type !== "none";
   const basedOnCompletion = value.type === "afterCompletion";
+  // Moving the start date carries a rule that was based on the old date (weekday / day of month) with it,
+  // so "Repeats" turned on before picking the date doesn't leave the first occurrence off the pattern.
+  const prevAnchor = useRef(anchorDate);
+  useEffect(() => {
+    const prev = prevAnchor.current;
+    prevAnchor.current = anchorDate;
+    if (!prev || !anchorDate || prev === anchorDate) return;
+    if (value.type === "weekly" && value.days.length === 1 && value.days[0] === dayOfWeek(prev)) onChange({ ...value, days: [dayOfWeek(anchorDate)] });
+    else if (value.type === "monthly" && value.dayOfMonth === parseDate(prev).getUTCDate()) onChange({ ...value, dayOfMonth: parseDate(anchorDate).getUTCDate() });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anchorDate]);
   const unit: RepeatUnit =
     value.type === "daily" ? "day" : value.type === "weekly" ? "week" : value.type === "monthly" ? "month" : value.type === "yearly" ? "year" : value.type === "afterCompletion" ? value.unit : "week";
   const interval = "interval" in value ? value.interval : 1;

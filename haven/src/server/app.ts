@@ -291,11 +291,18 @@ export async function buildApp(ctx: Ctx) {
     return t;
   });
   app.delete("/api/tasks/:id", modify, async (req) => {
-    const q = req.query as { scope?: "all" | "future" | "this"; from?: string; slot?: string };
+    const q = req.query as { scope?: "all" | "future" | "this"; from?: string; slot?: string; day?: string };
     const id = num((req.params as { id: string }).id);
     if (q.scope === "future" && q.from) tasks.endTaskSeries(ctx, id, date(q.from, "from"));
     else if (q.scope === "this" && q.from) {
-      tasks.completeTask(ctx, { taskId: id, occurrence: date(q.from, "from"), slot: q.slot === undefined || q.slot === "up" ? null : num(q.slot), status: "skipped" });
+      // "Delete only this one" skips that occurrence on the day it's shown (`day`, defaulting to the occurrence itself).
+      tasks.completeTask(ctx, {
+        taskId: id,
+        occurrence: date(q.from, "from"),
+        slot: q.slot === undefined || q.slot === "up" ? null : num(q.slot),
+        status: "skipped",
+        day: date(q.day ?? q.from, "day"),
+      });
     } else tasks.deleteTask(ctx, id);
     return { ok: true };
   });

@@ -129,7 +129,11 @@ export function MealForm({ meal, initial, onClose, onSaved }: { meal?: Meal; ini
           onFocus={() => !d.title && setSuggest(true)}
           onBlur={() => setTimeout(() => setSuggest(false), 150)}
           onKeyDown={(e) => {
-            if (e.key === "Escape") setSuggest(false);
+            if (e.key === "Escape" && suggest && matches.length > 0) {
+              // Only close the suggestions, not the whole form.
+              e.stopPropagation();
+              setSuggest(false);
+            }
             if (e.key === "Enter" && !suggest) trySave();
           }}
           aria-label="Meal"

@@ -238,12 +238,9 @@ export function useTaskController(from: string, to: string): TaskController {
   const setStatus = useCallback(
     async (inst: TaskInstance, status: "done" | "skipped" | "open", creditTo?: number) => {
       const body = { occurrence: inst.occurrence, part: inst.part, slot: inst.profileId };
-      if (status === "open") {
-        await mutate(inst, { status: "open", completedBy: null }, () => post(`/api/tasks/${inst.task.id}/uncomplete`, body));
-        return;
-      }
+      if (status === "open") return mutate(inst, { status: "open", completedBy: null }, () => post(`/api/tasks/${inst.task.id}/uncomplete`, body));
       if (status === "done") afterDone(inst);
-      await mutate(inst, { status, completedBy: status === "done" ? (inst.profileId ?? creditTo ?? null) : null }, () =>
+      return mutate(inst, { status, completedBy: status === "done" ? (inst.profileId ?? creditTo ?? null) : null }, () =>
         post(`/api/tasks/${inst.task.id}/complete`, { ...body, creditTo: creditTo ?? null, day: inst.date, status }),
       );
     },
@@ -263,7 +260,10 @@ export function useTaskController(from: string, to: string): TaskController {
     const occ = /^\d{4}-\d{2}-\d{2}$/.test(inst.occurrence) ? inst.occurrence : inst.date;
     const q = new URLSearchParams({ scope });
     if (scope !== "all") q.set("from", scope === "future" && inst.task.kind === "routine" ? inst.date : occ);
-    if (scope === "this") q.set("slot", inst.profileId === null ? "up" : String(inst.profileId));
+    if (scope === "this") {
+      q.set("slot", inst.profileId === null ? "up" : String(inst.profileId));
+      q.set("day", inst.date);
+    }
     await app.run(() => del(`/api/tasks/${inst.task.id}?${q}`), scope === "this" ? "Skipped this one" : "Task deleted");
     reload();
   };
@@ -281,7 +281,13 @@ export function useTaskController(from: string, to: string): TaskController {
           }}
           onSkip={(i) => {
             setDetails(null);
-            void setStatus(i, i.status === "skipped" ? "open" : "skipped");
+            if (i.status === "skipped") return void setStatus(i, "open");
+            // Skipped tasks are usually filtered out, so offer a quick way back.
+            void setStatus(i, "skipped").then(
+              (ok) =>
+                ok &&
+                toast(`Skipped “${i.task.title}”`, { label: "Undo", run: () => void setStatus({ ...i, status: "skipped" }, "open") }),
+            );
           }}
           onEdit={(i) => {
             setDetails(null);

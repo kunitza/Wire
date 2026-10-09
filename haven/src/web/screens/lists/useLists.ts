@@ -55,9 +55,12 @@ export function useListsModel() {
         patch((items) => [...items, item]);
         return;
       }
+      let undone = false; // the toast stays up after tapping Undo: don't restore twice
       toast(`Deleted “${item.text}”`, {
         label: "Undo",
         run: () => {
+          if (undone) return;
+          undone = true;
           run(() => post(`/api/lists/${item.listId}/items`, { text: item.text, section: item.section })).then((out) => {
             const added = (out as ListItem[] | undefined)?.[0];
             if (added && item.checked) run(() => put(`/api/items/${added.id}`, { checked: true }));

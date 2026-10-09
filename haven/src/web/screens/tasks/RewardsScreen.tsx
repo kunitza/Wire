@@ -387,7 +387,7 @@ function GiveStars({ onClose }: { onClose: () => void }) {
 
 function StarHistory({ onClose }: { onClose: () => void }) {
   const { people, settings, profileById } = useApp();
-  const [pid, setPid] = useState<number | null>(people[0]?.id ?? null);
+  const [pid, setPid] = useState<number | null>((people.find((p) => p.stars !== 0) ?? people[0])?.id ?? null);
   const { data } = useLive<StarLedgerEntry[]>(pid ? `/api/profiles/${pid}/ledger` : null, ["stars", "tasks", "rewards"]);
   const p = profileById(pid);
   return (

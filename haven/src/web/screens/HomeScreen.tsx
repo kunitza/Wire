@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, LayoutGrid, List as ListIcon } from "lucide-react";
 import { Fab, Header } from "../components/shell";
 import { Popover, ToggleRow } from "../components/ui";
@@ -22,6 +22,14 @@ export default function HomeScreen() {
   const { settings, today, run } = useApp();
   const home = settings.home;
   const [anchor, setAnchor] = useState(today);
+  // The wall display sits on Home for days: follow "today" across midnight when showing the current day.
+  const lastToday = useRef(today);
+  useEffect(() => {
+    if (lastToday.current !== today) {
+      setAnchor((a) => (a === lastToday.current ? today : a));
+      lastToday.current = today;
+    }
+  }, [today]);
   const [customize, setCustomize] = useState<HTMLElement | null>(null);
   const [viewMenu, setViewMenu] = useState<HTMLElement | null>(null);
   const [adding, setAdding] = useState<HTMLElement | null>(null);

@@ -167,6 +167,18 @@ describe("chores and routines", () => {
     expect(m.streak).toBe(2); // 4th and 6th, 5th skipped; today unfinished doesn't break it
   });
 
+  it("deleting only a future occurrence of a repeating chore hides it there without showing it today", async () => {
+    const { jake } = await family();
+    const t = await ok("POST", "/api/tasks", chore({ title: "Trash", profileIds: [jake.id], date: "2026-10-07", repeat: { type: "weekly", interval: 1, days: [3] } }));
+    await ok("DELETE", `/api/tasks/${t.id}?scope=this&from=2026-10-14&slot=${jake.id}`);
+    expect((await instances("2026-10-07", "2026-10-08")).map((i) => [i.occurrence, i.status])).toEqual([["2026-10-07", "open"]]);
+    expect((await instances("2026-10-14", "2026-10-15")).map((i) => [i.occurrence, i.status])).toEqual([["2026-10-14", "skipped"]]);
+    // Skipping ahead of time from the client (day = the occurrence) behaves the same.
+    await ok("POST", `/api/tasks/${t.id}/complete`, { occurrence: "2026-10-21", slot: jake.id, status: "skipped" });
+    expect((await instances("2026-10-07", "2026-10-08")).map((i) => i.occurrence)).toEqual(["2026-10-07"]);
+    expect((await instances("2026-10-21", "2026-10-22")).map((i) => i.status)).toEqual(["skipped"]);
+  });
+
   it("keeps stars when a chore is deleted", async () => {
     const { emma } = await family();
     const t = await ok("POST", "/api/tasks", chore({ title: "Dishes", profileIds: [emma.id], stars: 5 }));
@@ -240,6 +252,22 @@ describe("rewards", () => {
   it("validates the star cost range", async () => {
     const { emma } = await family();
     expect((await call("POST", "/api/rewards", { title: "x", cost: 501, profileIds: [emma.id] })).status).toBe(400);
+  });
+});
+
+describe("reward approval", () => {
+  it("holds stars while pending, refunds on decline, and can't flip a decided request", async () => {
+    const { emma } = await family();
+    await ok("PUT", "/api/settings", { rewardsNeedApproval: true });
+    const r = await ok("POST", "/api/rewards", { title: "Movie", description: "", emoji: "🎬", cost: 10, profileIds: [emma.id], renew: true });
+    await ok("POST", "/api/stars", { profileIds: [emma.id], delta: 12 });
+    const red = await ok("POST", `/api/rewards/${r.id}/redeem`, { profileId: emma.id });
+    expect(red.status).toBe("pending");
+    expect((await ok("GET", "/api/profiles"))[0].stars).toBe(2);
+    await ok("POST", `/api/redemptions/${red.id}`, { status: "declined" });
+    expect((await ok("GET", "/api/profiles"))[0].stars).toBe(12);
+    expect((await call("POST", `/api/redemptions/${red.id}`, { status: "approved" })).status).toBe(400);
+    expect((await ok("GET", "/api/profiles"))[0].stars).toBe(12);
   });
 });
 
@@ -375,6 +403,17 @@ describe("voice", () => {
 });
 
 describe("lists and meals", () => {
+  it("moves an item to the end of another list", async () => {
+    const { lists } = await ok("GET", "/api/lists");
+    const [a, b] = lists;
+    await ok("POST", `/api/lists/${b.id}/items`, { items: [{ text: "One" }, { text: "Two" }] });
+    const [x] = await ok("POST", `/api/lists/${a.id}/items`, { text: "Mover" });
+    await ok("PUT", `/api/items/${x.id}`, { listId: b.id });
+    const after = await ok("GET", "/api/lists");
+    expect(after.items.filter((i: { listId: number }) => i.listId === b.id).map((i: { text: string }) => i.text)).toEqual(["One", "Two", "Mover"]);
+    expect((await call("PUT", `/api/items/${x.id}`, { listId: 9999 })).status).toBe(400);
+  });
+
   it("adds, checks and clears list items; sends recipe ingredients to the grocery list", async () => {
     const { lists } = await ok("GET", "/api/lists");
     const g = lists[0];

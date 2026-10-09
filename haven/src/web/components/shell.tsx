@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Calendar, CheckSquare, Star, Utensils, BookOpen, Sparkles, Moon, Settings as Gear, List as ListIcon, Home, Lock, Unlock, Check, MoreHorizontal, AlertCircle } from "lucide-react";
 import { useApp, type Screen } from "../lib/store";
-import { clock, headerDate, weatherEmoji } from "../lib/format";
+import { clock, fmtTime, headerDate, weatherEmoji } from "../lib/format";
 import { post, get, put } from "../lib/api";
 import { Modal, ToggleRow } from "./ui";
 import type { CalendarEvent, SessionInfo, TaskInstance } from "../../shared/types";
@@ -156,6 +156,8 @@ export function PinPad() {
   useEffect(() => {
     setPin("");
     setError(false);
+    // "Remember this device" is a per-unlock choice; never carry it over to the next prompt.
+    setRemember(false);
   }, [pinPrompt]);
   if (!pinPrompt) return null;
   const close = (ok: boolean) => {
@@ -320,7 +322,8 @@ export function SleepController() {
     if (!scheduled && lastScheduled.current) setSleeping(false);
     if (scheduled && !sleeping && Date.now() - wokeAt.current > 5 * 60000 && wokeAt.current) setSleeping(true);
     lastScheduled.current = scheduled;
-  }, [scheduled, sleeping, setSleeping]);
+    // `now` ticks every 15s so a tap-to-wake inside the window goes back to sleep after 5 minutes.
+  }, [scheduled, sleeping, setSleeping, now]);
   useEffect(() => {
     if (scheduled && !wokeAt.current) setSleeping(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -402,6 +405,7 @@ interface Due {
 export function Reminders() {
   const { settings, today, now, profileById } = useApp();
   const [due, setDue] = useState<Due[]>([]);
+  const h24 = settings.clock24h;
   const fired = useRef(new Set<string>(JSON.parse(sessionStorage.getItem("haven-reminded") ?? "[]")));
   const minute = Math.floor(now.getTime() / 60000);
   useEffect(() => {
@@ -410,7 +414,8 @@ export function Reminders() {
     let cancelled = false;
     (async () => {
       const [events, tasks] = await Promise.all([
-        get<CalendarEvent[]>(`/api/events?from=${today}&to=${addDays(today, 1)}`),
+        // Through tomorrow, so "1 day before" (and late-evening "15 minutes before") reminders for tomorrow's events fire.
+        get<CalendarEvent[]>(`/api/events?from=${today}&to=${addDays(today, 2)}`),
         r.tasksWhenDue ? get<TaskInstance[]>(`/api/tasks/instances?from=${today}&to=${addDays(today, 1)}`) : Promise.resolve([]),
       ]);
       if (cancelled) return;
@@ -423,7 +428,7 @@ export function Reminders() {
         }
       };
       for (const e of events) {
-        if (e.allDay || e.start.slice(0, 10) !== today) continue;
+        if (e.allDay || e.start.slice(0, 10) < today) continue;
         const at = new Date(e.start).getTime();
         const custom = e.reminderMinutes;
         if (custom === -1) continue;
@@ -465,7 +470,10 @@ export function Reminders() {
           </span>
           <div className="grow">
             <div style={{ fontWeight: 600 }}>{d.title}</div>
-            <div className="muted">{d.when.slice(11, 16)}</div>
+            <div className="muted">
+              {d.when.slice(0, 10) > today ? "Tomorrow, " : ""}
+              {fmtTime(d.when, h24)}
+            </div>
           </div>
           <span>{people[i].map((p) => p!.avatar || p!.name[0]).join(" ")}</span>
         </div>

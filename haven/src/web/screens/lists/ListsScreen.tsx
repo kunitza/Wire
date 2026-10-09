@@ -50,13 +50,16 @@ export default function ListsScreen() {
   const onCheckedHidden = (item: ListItem) =>
     toast(`Checked off “${item.text}”`, { label: "Undo", run: () => actions.update({ ...item, checked: true }, { checked: false }) });
 
+  // Move among the lists shown here (lists hidden on this device keep their place in between).
   const move = (list: List, dir: -1 | 1) => {
     if (!lists) return;
+    const i = shown.findIndex((l) => l.id === list.id);
+    const other = shown[i + dir];
+    if (i < 0 || !other) return;
     const ids = lists.map((l) => l.id);
-    const i = ids.indexOf(list.id);
-    const j = i + dir;
-    if (j < 0 || j >= ids.length) return;
-    [ids[i], ids[j]] = [ids[j], ids[i]];
+    const a = ids.indexOf(list.id);
+    const b = ids.indexOf(other.id);
+    [ids[a], ids[b]] = [ids[b], ids[a]];
     run(() => post("/api/lists/reorder", { ids }));
   };
 
@@ -74,7 +77,7 @@ export default function ListsScreen() {
   const menuList = menu?.list;
   const menuItems = menuList && items ? itemsOf(items, menuList.id) : [];
   const doneCount = menuItems.filter((i) => i.checked).length;
-  const menuIndex = menuList && lists ? lists.findIndex((l) => l.id === menuList.id) : -1;
+  const menuIndex = menuList ? shown.findIndex((l) => l.id === menuList.id) : -1;
 
   return (
     <>
@@ -172,7 +175,7 @@ export default function ListsScreen() {
                 flat
                 icon={<ArrowRight />}
                 label="Move right"
-                disabled={menuIndex >= (lists?.length ?? 0) - 1}
+                disabled={menuIndex >= shown.length - 1}
                 onClick={() => (setMenu(null), move(menuList, 1))}
               />
             </div>

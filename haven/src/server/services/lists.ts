@@ -108,13 +108,21 @@ export function addItems(ctx: Ctx, listId: number, items: { text: string; sectio
 export function updateItem(ctx: Ctx, id: number, patch: Partial<Pick<ListItem, "text" | "section" | "checked" | "listId">>) {
   const cur = ctx.db.prepare("SELECT * FROM list_items WHERE id = ?").get(id) as ItemRow | undefined;
   if (!cur) throw new ListError("Item not found");
+  const listId = patch.listId ?? cur.list_id;
+  if (listId !== cur.list_id && !ctx.db.prepare("SELECT id FROM lists WHERE id = ?").get(listId)) throw new ListError("List not found");
+  // An item moved to another list goes to the end of it.
+  const sort =
+    listId === cur.list_id
+      ? cur.sort
+      : (ctx.db.prepare("SELECT COALESCE(MAX(sort), 0) + 1 AS s FROM list_items WHERE list_id = ?").get(listId) as { s: number }).s;
   ctx.db
-    .prepare("UPDATE list_items SET text = ?, section = ?, checked = ?, list_id = ? WHERE id = ?")
+    .prepare("UPDATE list_items SET text = ?, section = ?, checked = ?, list_id = ?, sort = ? WHERE id = ?")
     .run(
       patch.text?.trim() || cur.text,
-      patch.section ?? cur.section,
+      (patch.section ?? cur.section).trim(),
       patch.checked === undefined ? cur.checked : patch.checked ? 1 : 0,
-      patch.listId ?? cur.list_id,
+      listId,
+      sort,
       id,
     );
   ctx.bus.emit("lists");
