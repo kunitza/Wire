@@ -436,7 +436,7 @@ export default function Onboarding() {
                 Back
               </button>
               <span className="spacer" />
-              <button className="pill primary lg" onClick={finish} disabled={busy} style={{ minWidth: 240 }}>
+              <button className="pill primary lg ob-start" onClick={finish} disabled={busy}>
                 {busy ? "Setting up…" : "Start using Haven"}
                 {!busy && <ArrowRight />}
               </button>

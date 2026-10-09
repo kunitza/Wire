@@ -1,14 +1,15 @@
 import { Download, Smartphone } from "lucide-react";
-import { useApp } from "../../lib/store";
+import { useApp, useLive } from "../../lib/store";
 import { CopyButton, Group, Row, SectionTitle, Steps } from "./common";
-
-/** Keep in step with package.json. */
-const VERSION = "1.0.0";
 
 export default function BackupSection() {
   const { unlock, settings, profiles, calendars } = useApp();
-  const origin = location.origin;
-  const isLocal = /^(localhost|127\.|\[::1\])/.test(location.hostname);
+  const { data: about } = useLive<{ version: string; port: number; addresses: string[] }>("/api/about", []);
+  const VERSION = about?.version ?? "";
+  const onPi = /^(localhost|127\.|\[::1\])/.test(location.hostname);
+  // On the wall display, show the Pi's network address instead of "localhost".
+  const origin = onPi && about?.addresses[0] ? `http://${about.addresses[0]}:${about.port}` : location.origin;
+  const isLocal = onPi && !about?.addresses[0];
   const download = async () => {
     if (!(await unlock())) return;
     const a = document.createElement("a");

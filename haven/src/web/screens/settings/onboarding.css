@@ -27,6 +27,7 @@
 .ob-summary .set-row { min-height: 58px; }
 .ob-pin { display: flex; gap: 32px; align-items: flex-start; flex-wrap: wrap; }
 .ob-pin > .col { flex: 1 1 260px; }
+.ob-start { min-width: 240px; }
 .ob-skip { color: var(--text-2); font-weight: 600; padding: 10px 6px; }
 @media (max-width: 820px) {
   .ob-wrap { padding: 18px 12px 28px; }
@@ -37,5 +38,7 @@
   .ob-welcome h1 { font-size: 40px; }
   .ob-card .lead { font-size: 16px; }
   .ob-welcome { padding-top: 34px; padding-bottom: 30px; }
-  .ob-foot .pill.lg { padding: 0 20px; }
+  .ob-foot { gap: 8px; }
+  .ob-foot .pill.lg { padding: 0 16px; font-size: 16px; height: 52px; }
+  .ob-start { min-width: 0; }
 }

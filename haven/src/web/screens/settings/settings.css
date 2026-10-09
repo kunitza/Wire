@@ -88,6 +88,7 @@
   .set-locked { flex-wrap: wrap; }
   .set-input-row { flex-wrap: wrap; }
   .set-code { font-size: 12px; }
+  .set-kbd { white-space: normal; overflow-wrap: anywhere; }
 }
 .set-spin { animation: set-spin 1s linear infinite; }
 @keyframes set-spin { to { transform: rotate(360deg); } }

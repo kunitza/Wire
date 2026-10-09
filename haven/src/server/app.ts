@@ -4,6 +4,7 @@ import fastifyStatic from "@fastify/static";
 import fs from "node:fs";
 import path from "node:path";
 import { exec } from "node:child_process";
+import os from "node:os";
 import type { Ctx } from "./context.js";
 import * as profiles from "./services/profiles.js";
 import * as tasks from "./services/tasks.js";
@@ -23,6 +24,26 @@ import { addDays, localDateOf } from "../shared/dates.js";
 import type { ChangeTopic, EditScope } from "../shared/types.js";
 
 const COOKIE = "haven_sid";
+
+const VERSION: string = (() => {
+  try {
+    const here = path.dirname(new URL(import.meta.url).pathname);
+    for (const p of [path.join(here, "..", "..", "package.json"), path.join(here, "..", "package.json")])
+      if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, "utf8")).version ?? "dev";
+  } catch {
+    /* ignore */
+  }
+  return "dev";
+})();
+
+/** Non-loopback IPv4 addresses, home network (192.168/10/172) first, then Tailscale (100.x). */
+export function lanAddresses(): string[] {
+  const out: string[] = [];
+  for (const list of Object.values(os.networkInterfaces()))
+    for (const a of list ?? []) if (a.family === "IPv4" && !a.internal) out.push(a.address);
+  const rank = (ip: string) => (ip.startsWith("192.168.") ? 0 : ip.startsWith("10.") ? 1 : ip.startsWith("172.") ? 2 : ip.startsWith("100.") ? 3 : 4);
+  return out.sort((a, b) => rank(a) - rank(b));
+}
 
 class HttpError extends Error {
   constructor(
@@ -483,7 +504,9 @@ export async function buildApp(ctx: Ctx) {
   app.get("/api/voice/setup", modify, async (req) => {
     let token = settings.voiceToken(ctx);
     if (!token) token = settings.setVoiceToken(ctx);
-    const host = req.headers.host ?? `localhost:${ctx.config.port}`;
+    // On the wall display the page is opened as localhost; phones/Home Assistant need the LAN address.
+    let host = req.headers.host ?? `localhost:${ctx.config.port}`;
+    if (/^(localhost|127\.|\[::1\])/.test(host) && lanAddresses()[0]) host = `${lanAddresses()[0]}:${ctx.config.port}`;
     const base = `http://${host}`;
     return { token, commandUrl: `${base}/api/voice/command`, homeAssistantYaml: homeAssistantYaml(ctx, base, token) };
   });
@@ -495,6 +518,9 @@ export async function buildApp(ctx: Ctx) {
     if (cmd) exec(cmd, (err) => err && console.error(`display command failed: ${err.message}`));
     return { ok: true, ran: !!cmd };
   });
+
+  // ---------- About (version + this Pi's addresses for phones) ----------
+  app.get("/api/about", async () => ({ version: VERSION, port: ctx.config.port, addresses: lanAddresses() }));
 
   // ---------- Health ----------
   app.get("/api/health", async () => ({ ok: true, time: ctx.now().toISOString() }));
