@@ -274,7 +274,7 @@ export async function planMeals(
           required: ["date", "existingRecipeId", "title", "emoji", "ingredients", "instructions"],
           properties: {
             date: { type: "string" },
-            existingRecipeId: { type: ["integer", "null"], description: "id of a saved recipe, or null for a new one" },
+            existingRecipeId: { anyOf: [{ type: "integer" }, { type: "null" }], description: "id of a saved recipe, or null for a new one" },
             ...recipeProps,
           },
         },
@@ -365,7 +365,7 @@ export async function organizeList(ctx: Ctx, items: { id: number; text: string }
           properties: {
             id: { type: "integer" },
             section: { type: "string" },
-            duplicateOf: { type: ["integer", "null"], description: "id of an earlier item this duplicates, else null" },
+            duplicateOf: { anyOf: [{ type: "integer" }, { type: "null" }], description: "id of an earlier item this duplicates, else null" },
           },
         },
       },

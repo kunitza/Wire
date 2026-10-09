@@ -324,17 +324,10 @@ export function taskInstances(ctx: Ctx, from: string, to: string, opts: { kind?:
         if (c.task_id === task.id && c.slot === s && c.part === "" && c.day !== c.occurrence && inRange(c.day))
           push(task, c.day, c.occurrence, null, slot, true);
       }
-      // Roll the latest missed occurrence forward onto today.
+      // Roll the latest missed occurrence forward onto today (until the next one is due).
       if (showToday && !occursOn(task.repeat, anchor, today, task.repeatUntil)) {
         const prev = previousOccurrence({ ...task, date: anchor }, today);
         if (prev && !byKey.has(ckey(task.id, prev, "", s))) push(task, today, prev, null, slot, true);
-      } else if (showToday) {
-        const prev = previousOccurrence({ ...task, date: anchor }, today);
-        // Today has its own occurrence; an older miss still rolls if it was the immediately preceding one
-        // and is a non-daily chore (daily chores simply start fresh).
-        if (prev && task.repeat.type !== "daily" && !byKey.has(ckey(task.id, prev, "", s)) && prev >= addDays(today, -6)) {
-          push(task, today, prev, null, slot, true);
-        }
       }
     }
   }

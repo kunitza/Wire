@@ -44,7 +44,7 @@ export default function HomeScreen() {
         <section className="panel home-cal" aria-label="Calendar">
           <div className="panel-head">
             <Calendar />
-            Calendar
+            <span className="home-cal-label">Calendar</span>
             <span className="spacer" />
             <button className="pill sm" onClick={(e) => setViewMenu(e.currentTarget)} style={{ textTransform: "none", letterSpacing: 0 }}>
               {VIEWS.find((v) => v.id === view)?.label}

@@ -54,6 +54,7 @@ export function CalendarActions({ children, openDay }: { children: ReactNode; op
 
 /** Number of schedule columns: the setting, capped for small spaces. */
 export function scheduleDaysFor(s: CalSettings, compact: boolean, isPhone: boolean): number {
+  if (compact && isPhone) return Math.min(2, s.scheduleDays);
   return compact || isPhone ? Math.min(3, s.scheduleDays) : s.scheduleDays;
 }
 
@@ -93,6 +94,7 @@ export function CalendarBody({
  */
 export function CalendarPane({ view, anchor, onAnchor, onView }: { view: CalendarView; anchor: string; onAnchor: (d: string) => void; onView?: (v: CalendarView) => void }) {
   const s = useCalSettings();
+  const { isPhone } = useApp();
   const openDay = useMemo(
     () =>
       (d: string) => {
@@ -104,7 +106,7 @@ export function CalendarPane({ view, anchor, onAnchor, onView }: { view: Calenda
   return (
     <CalendarActions openDay={openDay}>
       <div className="cal-pane">
-        <CalendarBody view={view} anchor={anchor} onAnchor={onAnchor} compact scheduleDays={scheduleDaysFor(s, true, false)} />
+        <CalendarBody view={view} anchor={anchor} onAnchor={onAnchor} compact scheduleDays={scheduleDaysFor(s, true, isPhone)} />
       </div>
     </CalendarActions>
   );
@@ -113,8 +115,8 @@ export function CalendarPane({ view, anchor, onAnchor, onView }: { view: Calenda
 /** Navigation helpers for the Home panel's own ‹ Today › controls (matches CalendarPane's period sizes). */
 export function usePaneNav(view: CalendarView, anchor: string) {
   const s = useCalSettings();
-  const { today } = useApp();
-  const opts = { scheduleDays: scheduleDaysFor(s, true, false) };
+  const { today, isPhone } = useApp();
+  const opts = { scheduleDays: scheduleDaysFor(s, true, isPhone) };
   return {
     step: (dir: number) => stepAnchor(view, anchor, dir, s, opts),
     isCurrent: isCurrentPeriod(view, anchor, today, s, opts),

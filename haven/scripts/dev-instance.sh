@@ -11,10 +11,11 @@ npx vite build --outDir "$dir/web" --emptyOutDir >/dev/null
 if [ ! -f "$dir/data/haven.db" ]; then
   HAVEN_DATA_DIR="$dir/data" npx tsx src/server/seed.ts >/dev/null
 fi
-# Stop whatever is listening on the port (npx/tsx spawn child processes, so the saved pid isn't enough).
-for pid in $(ss -ltnpH "sport = :$port" 2>/dev/null | grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -u); do kill "$pid" 2>/dev/null || true; done
-if [ -f "$dir/server.pid" ]; then kill "$(cat "$dir/server.pid")" 2>/dev/null || true; fi
-for i in $(seq 1 20); do ss -ltnH "sport = :$port" | grep -q . || break; sleep 0.25; done
+# Stop any previous server for this instance (npx/tsx spawn child processes, so match on the environment).
+for p in /proc/[0-9]*; do
+  if (tr '\0' '\n' <"$p/environ") 2>/dev/null | grep -qx "HAVEN_DATA_DIR=$dir/data"; then kill "${p#/proc/}" 2>/dev/null || true; fi
+done
+sleep 0.5
 HAVEN_DATA_DIR="$dir/data" HAVEN_WEB_DIR="$dir/web" PORT=$port nohup npx tsx src/server/index.ts >"$dir/server.log" 2>&1 &
 echo $! >"$dir/server.pid"
 for i in $(seq 1 40); do curl -sf "http://localhost:$port/api/health" >/dev/null && break; sleep 0.25; done
