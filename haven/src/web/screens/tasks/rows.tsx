@@ -1,10 +1,11 @@
 import type React from "react";
+import { useEffect, useState } from "react";
 import { SkipForward } from "lucide-react";
-import type { TaskInstance } from "../../../shared/types";
+import type { Profile, TaskInstance } from "../../../shared/types";
 import { useApp } from "../../lib/store";
 import { tint } from "../../lib/format";
 import { Avatar, CheckCircle, ProgressRing } from "../../components/ui";
-import { TaskChips, taskSubline, type Section, type TaskController } from "./taskKit";
+import { ColAvatar, TaskChips, taskSubline, type Section, type TaskController } from "./taskKit";
 
 /** The check circle, or a "skipped" circle that unskips when tapped. */
 export function TaskCheck({ inst, color, size = 44, ctl }: { inst: TaskInstance; color: string; size?: number; ctl: TaskController }) {
@@ -112,5 +113,44 @@ export function RingButton({
       </ProgressRing>
       <span className="tasks-ring-lbl">{section.label}</span>
     </button>
+  );
+}
+
+/**
+ * Phones show one profile column at a time (swipe sideways). This strip of names above the board shows
+ * which column is in view and jumps to another one.
+ */
+export function ColumnTabs({ cols, board }: { cols: (Profile | null)[]; board: HTMLElement | null }) {
+  const [active, setActive] = useState(0);
+  useEffect(() => {
+    if (!board) return;
+    const onScroll = () => {
+      const first = board.firstElementChild as HTMLElement | null;
+      if (!first) return;
+      const gap = parseFloat(getComputedStyle(board).columnGap) || 0;
+      setActive(Math.max(0, Math.min(cols.length - 1, Math.round(board.scrollLeft / (first.offsetWidth + gap)))));
+    };
+    onScroll();
+    board.addEventListener("scroll", onScroll, { passive: true });
+    return () => board.removeEventListener("scroll", onScroll);
+  }, [board, cols.length]);
+  useEffect(() => {
+    document.querySelector(".tasks-coltabs .on")?.scrollIntoView({ inline: "nearest", block: "nearest" });
+  }, [active]);
+  return (
+    <div className="tasks-coltabs" role="tablist" aria-label="Profiles">
+      {cols.map((p, i) => (
+        <button
+          key={p?.id ?? "up"}
+          role="tab"
+          aria-selected={i === active}
+          className={i === active ? "on" : ""}
+          onClick={() => (board?.children[i] as HTMLElement | undefined)?.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" })}
+        >
+          <ColAvatar profile={p} size={30} />
+          {p?.name ?? "Up For Grabs"}
+        </button>
+      ))}
+    </div>
   );
 }

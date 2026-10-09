@@ -8,7 +8,7 @@ import { useApp } from "../../lib/store";
 import { put } from "../../lib/api";
 import { dayLabel, headerDate, rangeLabel, shortDate, tint } from "../../lib/format";
 import { ColAvatar, DoneChip, SECTIONS, StarChip, TaskChips, UfgAvatar, colKey, colorOf, partOfDay, progressOf, sectionOf, useTaskController, type Section, type TaskController } from "./taskKit";
-import { RingButton, TaskCheck, TaskRow } from "./rows";
+import { ColumnTabs, RingButton, TaskCheck, TaskRow } from "./rows";
 import "./tasks.css";
 
 type View = "day" | "week";
@@ -128,8 +128,9 @@ function FilterPopover({ anchor, onClose }: { anchor: HTMLElement; onClose: () =
 
 // ---------- Day view ----------
 function DayBoard({ day, ctl }: { day: string; ctl: TaskController }) {
-  const { people, settings, now, today } = useApp();
+  const { people, settings, now, today, isPhone } = useApp();
   const ts = settings.tasks;
+  const [board, setBoard] = useState<HTMLDivElement | null>(null);
   const [vis, setVis] = useState<Record<string, Partial<Record<Section, boolean>>>>({});
   useEffect(() => setVis({}), [day]);
   const list = useMemo(() => (ctl.instances ?? []).filter((i) => i.date === day), [ctl.instances, day]);
@@ -145,23 +146,26 @@ function DayBoard({ day, ctl }: { day: string; ctl: TaskController }) {
     );
   const part = partOfDay(now);
   return (
-    <div className="tasks-board">
-      {cols.map((p) => {
-        const k = colKey(p?.id ?? null);
-        return (
-          <DayColumn
-            key={k}
-            profile={p}
-            list={list.filter((i) => i.profileId === (p?.id ?? null))}
-            isToday={day === today}
-            part={part}
-            vis={vis[k] ?? {}}
-            onVis={(s, v) => setVis((m) => ({ ...m, [k]: { ...m[k], [s]: v } }))}
-            ctl={ctl}
-          />
-        );
-      })}
-    </div>
+    <>
+      {isPhone && cols.length > 1 && <ColumnTabs cols={cols} board={board} />}
+      <div className="tasks-board" ref={setBoard}>
+        {cols.map((p) => {
+          const k = colKey(p?.id ?? null);
+          return (
+            <DayColumn
+              key={k}
+              profile={p}
+              list={list.filter((i) => i.profileId === (p?.id ?? null))}
+              isToday={day === today}
+              part={part}
+              vis={vis[k] ?? {}}
+              onVis={(s, v) => setVis((m) => ({ ...m, [k]: { ...m[k], [s]: v } }))}
+              ctl={ctl}
+            />
+          );
+        })}
+      </div>
+    </>
   );
 }
 

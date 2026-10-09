@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { CalendarDays, SlidersHorizontal, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Pencil, Plus, Sparkles } from "lucide-react";
 import type { Meal, MealCategory, Recipe } from "../../../shared/types";
 import { addDays, eachDay, startOfWeek } from "../../../shared/dates";
@@ -25,6 +25,11 @@ export default function MealsScreen() {
   const [plan, setPlan] = useState(false);
   const cats = mealCategories.filter((c) => c.visible);
   const isThisWeek = days.includes(today);
+  // Phones list the week as one long column: start at today rather than Sunday.
+  const loaded = !!meals;
+  useEffect(() => {
+    if (isPhone && isThisWeek && loaded) document.querySelector(".meals-day.today")?.scrollIntoView({ block: "start" });
+  }, [isPhone, isThisWeek, loaded, weekStart]);
 
   const cell = (date: string, cat: MealCategory) => (meals ?? []).filter((m) => m.date === date && m.categoryId === cat.id);
   const recipeOf = (m: Meal) => recipes?.find((r) => r.id === m.recipeId);
@@ -77,7 +82,7 @@ export default function MealsScreen() {
             {days.map((d) => {
               const dl = dayLabel(d);
               return (
-                <section key={d} className="meals-day">
+                <section key={d} className={`meals-day ${d === today ? "today" : ""}`}>
                   <h2 className="serif meals-dayhead">
                     {dl.dow} <span className={d === today ? "today-num" : ""}>{dl.num}</span>
                   </h2>

@@ -135,6 +135,7 @@ export function TaskForm({
     <Modal
       title={task ? `Edit ${task.kind === "routine" ? "Routine" : "Chore"}` : "Add Task"}
       onClose={onClose}
+      className="tasks-form"
       actions={
         <button className="pill" onClick={() => setBox(true)}>
           <Package />

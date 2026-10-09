@@ -23,7 +23,7 @@ export default function DisplaySection() {
           ]}
           onChange={(v) => set({ defaultView: v })}
         />
-        <Row label="Days in Schedule view" hint="How many day columns the Schedule view shows.">
+        <Row label="Days in Schedule view" hint="How many day columns the Schedule view shows." className="set-choice">
           <div className="segmented" style={{ background: "#fff" }}>
             {[1, 2, 3, 4, 5, 6, 7].map((n) => (
               <button

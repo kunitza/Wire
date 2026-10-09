@@ -104,7 +104,8 @@ export default function VoiceSection() {
       .catch((e) => setError(e.message));
   }, [v.enabled, canSee]);
 
-  const isLocal = /^(localhost|127\.|\[::1\])/.test(location.hostname);
+  // The server already swaps localhost for the Pi's LAN address when it knows one; only warn if it couldn't.
+  const isLocal = /^https?:\/\/(localhost|127\.|\[::1\])/.test(setup?.commandUrl ?? "");
   const masked = setup ? `${"•".repeat(Math.max(4, setup.token.length - 4))}${setup.token.slice(-4)}` : "";
 
   return (

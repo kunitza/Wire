@@ -89,6 +89,9 @@
   .set-input-row { flex-wrap: wrap; }
   .set-code { font-size: 12px; }
   .set-kbd { white-space: normal; overflow-wrap: anywhere; }
+  .set-profile-row { gap: 8px; padding: 10px; }
+  .set-profile-row .icon-btn { width: 40px; height: 40px; flex: none; }
+  .set-profile-row .row { flex-wrap: wrap; row-gap: 2px; }
 }
 .set-spin { animation: set-spin 1s linear infinite; }
 @keyframes set-spin { to { transform: rotate(360deg); } }

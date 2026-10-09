@@ -38,9 +38,9 @@ export function Group({ title, hint, children }: { title?: ReactNode; hint?: Rea
   );
 }
 
-export function Row({ label, hint, children, icon }: { label: ReactNode; hint?: ReactNode; children?: ReactNode; icon?: ReactNode }) {
+export function Row({ label, hint, children, icon, className }: { label: ReactNode; hint?: ReactNode; children?: ReactNode; icon?: ReactNode; className?: string }) {
   return (
-    <div className="set-row">
+    <div className={`set-row ${className ?? ""}`}>
       {icon}
       <div className="grow">
         {label}

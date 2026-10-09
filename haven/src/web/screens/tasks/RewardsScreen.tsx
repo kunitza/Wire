@@ -9,6 +9,7 @@ import { isDark, shortDate, tint, fmtTime } from "../../lib/format";
 import { localDateOf } from "../../../shared/dates";
 import { StarChip } from "./taskKit";
 import { StarStepper } from "./TaskForm";
+import { ColumnTabs } from "./rows";
 import "./tasks.css";
 
 type RewardInput = Pick<Reward, "title" | "description" | "emoji" | "cost" | "profileIds" | "renew">;
@@ -22,7 +23,10 @@ export default function RewardsScreen() {
   const [redeemed, setRedeemed] = useState<{ reward: Reward; profile: Profile; pending: boolean } | null>(null);
   const [give, setGive] = useState(false);
   const [history, setHistory] = useState(false);
+  const [board, setBoard] = useState<HTMLDivElement | null>(null);
   const pending = (redemptions ?? []).filter((r) => r.status === "pending");
+  // People with rewards first.
+  const cols = [...people].sort((a, b) => Number(!rewards?.some((r) => r.profileIds.includes(a.id))) - Number(!rewards?.some((r) => r.profileIds.includes(b.id))));
 
   const doRedeem = async (reward: Reward, profile: Profile) => {
     const r = await run(() => post<Redemption>(`/api/rewards/${reward.id}/redeem`, { profileId: profile.id }));
@@ -83,20 +87,23 @@ export default function RewardsScreen() {
             <div>Add family members in Settings to start earning stars.</div>
           </div>
         ) : (
-          <div className="rw-board">
-            {[...people].sort((a, b) => Number(!rewards?.some((r) => r.profileIds.includes(a.id))) - Number(!rewards?.some((r) => r.profileIds.includes(b.id)))).map((p) => (
-              <RewardColumn
-                key={p.id}
-                profile={p}
-                rewards={(rewards ?? []).filter((r) => r.profileIds.includes(p.id))}
-                loading={!rewards}
-                pending={pending.filter((r) => r.profileId === p.id)}
-                onRedeem={(reward) => setRedeem({ reward, profile: p })}
-                onEdit={(reward) => setEdit({ reward })}
-                onAdd={() => setEdit({ reward: null, profileIds: [p.id] })}
-              />
-            ))}
-          </div>
+          <>
+            {isPhone && cols.length > 1 && <ColumnTabs cols={cols} board={board} />}
+            <div className="rw-board" ref={setBoard}>
+              {cols.map((p) => (
+                <RewardColumn
+                  key={p.id}
+                  profile={p}
+                  rewards={(rewards ?? []).filter((r) => r.profileIds.includes(p.id))}
+                  loading={!rewards}
+                  pending={pending.filter((r) => r.profileId === p.id)}
+                  onRedeem={(reward) => setRedeem({ reward, profile: p })}
+                  onEdit={(reward) => setEdit({ reward })}
+                  onAdd={() => setEdit({ reward: null, profileIds: [p.id] })}
+                />
+              ))}
+            </div>
+          </>
         )}
       </div>
       <Fab onClick={() => setEdit({ reward: null })} label="Add reward" />
