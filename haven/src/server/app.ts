@@ -494,9 +494,23 @@ export function startBackgroundJobs(ctx: Ctx) {
   every(10 * 60 * 1000, () => ics.syncAll(ctx));
   every(30 * 60 * 1000, () => weather.refreshWeather(ctx));
   every(2 * 60 * 1000, () => email.checkEmail(ctx));
-  // Clean out stale sessions/old completed imports occasionally.
+  // Daily: back up the database (keep 14) and clean out old dismissed imports.
   every(24 * 60 * 60 * 1000, async () => {
+    backupDatabase(ctx);
     const cutoff = addDays(localDateOf(ctx.now()), -90);
     ctx.db.prepare("DELETE FROM imports WHERE created_at < ? AND status IN ('dismissed','undone','failed')").run(cutoff);
   });
+}
+
+/** Write data/backups/haven-YYYY-MM-DD.db and prune old copies. */
+export function backupDatabase(ctx: Ctx, keep = 14): string | null {
+  if (ctx.config.dbFile === ":memory:") return null;
+  const dir = path.join(ctx.config.dataDir, "backups");
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `haven-${localDateOf(ctx.now())}.db`);
+  if (fs.existsSync(file)) fs.unlinkSync(file);
+  ctx.db.exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`);
+  const all = fs.readdirSync(dir).filter((f) => /^haven-\d{4}-\d{2}-\d{2}\.db$/.test(f)).sort();
+  for (const old of all.slice(0, Math.max(0, all.length - keep))) fs.unlinkSync(path.join(dir, old));
+  return file;
 }
