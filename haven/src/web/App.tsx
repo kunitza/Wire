@@ -4,6 +4,7 @@ import { setLockHandler } from "./lib/api";
 import { BottomNav, EmojiRain, PinPad, Reminders, Sidebar, SleepController, SleepDialog, Toasts } from "./components/shell";
 import HomeScreen from "./screens/HomeScreen";
 import Onboarding from "./screens/Onboarding";
+import { OnScreenKeyboard, useKioskKeyboard } from "./components/Keyboard";
 
 const CalendarScreen = lazy(() => import("./screens/calendar/CalendarScreen"));
 const TasksScreen = lazy(() => import("./screens/tasks/TasksScreen"));
@@ -18,6 +19,7 @@ function Shell() {
   const app = useApp();
   const { screen, settings, unlock, profiles } = app;
   const [sleepDialog, setSleepDialog] = useState(false);
+  const keyboard = useKioskKeyboard();
 
   useEffect(() => setLockHandler(unlock), [unlock]);
   useEffect(() => {
@@ -29,7 +31,13 @@ function Shell() {
     document.documentElement.dataset.density = settings.density;
   }, [settings.textSize, settings.density]);
 
-  if (!profiles.length && !localStorage.getItem("haven-skip-onboarding")) return <Onboarding />;
+  if (!profiles.length && !localStorage.getItem("haven-skip-onboarding"))
+    return (
+      <>
+        <Onboarding />
+        {keyboard && <OnScreenKeyboard />}
+      </>
+    );
 
   const Screen = {
     home: HomeScreen,
@@ -58,6 +66,7 @@ function Shell() {
       <SleepController />
       <Reminders />
       {sleepDialog && <SleepDialog onClose={() => setSleepDialog(false)} />}
+      {keyboard && <OnScreenKeyboard />}
     </div>
   );
 }
