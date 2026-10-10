@@ -1,0 +1,14 @@
+/* Sidekick (AI) helpers shared by Lists, Meals and Recipes */
+.ai-note { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 16px 18px; border-radius: 24px; background: #fff4e5; }
+.ai-note .grow { min-width: 220px; }
+.ai-note-icon { font-size: 32px; line-height: 1; flex: none; }
+.ai-working { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 48px 20px; color: var(--text-2); font-weight: 600; font-size: calc(18px * var(--fs)); }
+.ai-working svg { width: 44px; height: 44px; color: var(--blue); }
+.ai-spin { animation: ai-pulse 1.4s ease-in-out infinite; }
+@keyframes ai-pulse { 0%, 100% { transform: scale(0.85) rotate(0deg); opacity: 0.6; } 50% { transform: scale(1.1) rotate(20deg); opacity: 1; } }
+.sk-pill { background: linear-gradient(100deg, #eaf3fb, #f3ecfb); }
+.sk-pill:hover { background: linear-gradient(100deg, #dcebf8, #e9ddf8); }
+.sk-pill svg { color: #6b5bd6; }
+@media (max-width: 820px) {
+  .ai-note { flex-wrap: wrap; }
+}

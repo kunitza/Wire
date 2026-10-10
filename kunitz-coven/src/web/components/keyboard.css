@@ -1,0 +1,31 @@
+/* On-screen keyboard (wall display) */
+.kb {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 950;
+  background: #e4e9ee; padding: 10px 10px 14px; display: flex; flex-direction: column; gap: 10px;
+  box-shadow: 0 -8px 30px rgba(20, 30, 40, 0.12); user-select: none; -webkit-user-select: none; touch-action: manipulation;
+  animation: kb-up 0.16s ease-out;
+}
+@keyframes kb-up { from { transform: translateY(30px); opacity: 0; } }
+.kb-row { display: flex; gap: 8px; justify-content: center; }
+.kb-key {
+  flex: 1 1 0; max-width: 132px; height: 78px; border-radius: 14px; background: #fff; color: #1f1f1f;
+  font: 500 30px var(--font-sans); display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.12);
+}
+.kb-key:active { background: #cfd8e0; transform: translateY(1px); box-shadow: none; }
+.kb-key svg { width: 30px; height: 30px; }
+.kb-wide { flex-grow: 1.5; max-width: 190px; background: #cdd5dd; font-size: 22px; }
+.kb-wide.on { background: #fff; }
+.kb-wide.lock { box-shadow: inset 0 -4px 0 var(--blue); }
+.kb-space { flex-grow: 6; max-width: 640px; font-size: 20px; color: #5d6063; }
+.kb-enter { background: var(--blue); color: #fff; }
+.kb-enter:active { background: var(--blue-dark); }
+
+/* Shrink the app and dialogs so the focused field stays visible above the keyboard. */
+html.kb-open .app { height: calc(100% - var(--kb-h, 0px)); }
+html.kb-open .overlay { bottom: var(--kb-h, 0px); }
+html.kb-open .modal { max-height: calc(100vh - var(--kb-h, 0px) - 24px); }
+
+@media (max-height: 820px) {
+  .kb-key { height: 62px; font-size: 26px; }
+}
