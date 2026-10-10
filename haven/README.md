@@ -23,7 +23,12 @@ It runs on a Raspberry Pi with a touchscreen. Your phones use the same app in th
   - Turns school emails, PDFs and photos of flyers into calendar events. You review them before they're added.
   - Plans meals and writes recipes, including from a photo of your fridge.
   - Builds lists and suggests activities.
-- **Voice:** "Hey Siri / Hey Google, Emma finished the dishes". Voice can only do kid-safe actions: check off, undo, "what's left" and stars.
+- **Voice:** "Hey Siri / Hey Google, Emma finished the dishes". Voice can only do kid-safe actions: check off, undo, "what's left", stars and kitchen timers.
+- **Kitchen timers:** several named timers at once, set by touch, voice or Claude. They ring on the wall display until dismissed.
+- **Repeatable chores:** e.g. "Read a book", up to 3 times a day, with stars each time.
+- **Weather:** tap the weather for a 10-day forecast with hourly detail.
+- **Claude connector:** ask Claude Code or Claude Desktop on your home computer things like "what's on Thursday?" or "add milk to the grocery list".
+- **On-screen keyboard:** a big touch keyboard on the wall display.
 - **Parental Lock:** a 4-digit PIN. Kids can still check things off, use lists and redeem rewards.
 - **Sleep Mode:** the screen turns off overnight.
 - **Reminders:** popups with a chime.
@@ -126,7 +131,32 @@ See [docs/VOICE.md](docs/VOICE.md). In short:
 - **Siri:** free. A Shortcut sends your phrase to Haven, and Siri speaks the reply.
 - **Google Home Mini:** Google no longer allows custom voice apps. The route is Home Assistant with its cloud add-on (about $65/yr), and Haven generates the Home Assistant config for you.
 
-## 7. Reset a forgotten PIN
+## 7. Claude connector (optional)
+
+*Settings → Claude connector* lets Claude read and update Haven.
+
+**What Claude can do**
+- Read: calendar, chores, lists, meals, stars, weather.
+- Add: events, chores, list items, meals, timers.
+- It can't delete anything or change settings.
+
+**How it connects**
+- It uses a token you can turn off or regenerate at any time.
+- **Claude Code:** copy the one-line `claude mcp add …` command shown there.
+- **Claude Desktop:**
+  1. Download `haven-mcp.mjs` from that page.
+  2. Paste the config snippet it shows into Claude Desktop's config file.
+  3. Claude Desktop needs Node.js installed.
+- It only works from computers on your home network or Tailscale. The Claude phone and web apps can't reach a home network, and that's on purpose.
+
+## 8. Security notes
+
+- **Allowed addresses.** Haven only answers to IP addresses and home-network names (`*.local`, `*.lan`, Tailscale `*.ts.net`). This blocks "DNS rebinding" attacks from websites. If you open Haven under another name, add it to `HAVEN_ALLOWED_HOSTS=` in `/etc/haven.env`.
+- **Turn Parental Lock on once things are set up.** It also protects the secrets: the API key, the email password, the voice and Claude tokens, and the backup download.
+- **PIN guessing is slowed down.** After 5 wrong PINs, entry pauses for 1 minute, then 2, 4… up to an hour.
+- **Email imports wait for review unless the sender is trusted.** Mail from senders not on your *Allowed senders* list stays in Sidekick until you approve it.
+
+## 9. Reset a forgotten PIN
 
 On the Pi, run:
 

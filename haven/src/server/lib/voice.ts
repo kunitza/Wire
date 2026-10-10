@@ -1,4 +1,5 @@
 import type { Ctx } from "../context.js";
+import { handleTimerCommand } from "./voiceTimers.js";
 import { completeTask, currentPart, taskInstances, uncompleteTask } from "../services/tasks.js";
 import { listProfiles, starBalances } from "../services/profiles.js";
 import { addItems, findListByName, groceryListId } from "../services/lists.js";
@@ -11,7 +12,7 @@ import type { DayPart, Profile, TaskInstance } from "../../shared/types.js";
 export interface VoiceResult {
   ok: boolean;
   speech: string;
-  action?: "complete" | "undo" | "status" | "stars" | "list-add" | "none";
+  action?: "complete" | "undo" | "status" | "stars" | "list-add" | "timer" | "none";
 }
 
 const FILLER = new Set(
@@ -66,6 +67,9 @@ function remainingFor(ctx: Ctx, profileId: number): TaskInstance[] {
 export function runVoiceCommand(ctx: Ctx, text: string, opts: { allowListAdd: boolean }): VoiceResult {
   const raw = text.trim();
   if (!raw) return { ok: false, speech: "I didn't catch that.", action: "none" };
+  // Kitchen timers: "set a 10 minute pasta timer", "how much time is left", "stop the timer".
+  const timer = handleTimerCommand(ctx, raw);
+  if (timer) return { ...timer, action: "timer" };
   const profiles = listProfiles(ctx).filter((p) => p.kind === "profile");
   const lower = raw.toLowerCase();
   const words = tokens(raw);
@@ -187,7 +191,7 @@ export function homeAssistantYaml(ctx: Ctx, baseUrl: string, token: string): str
     '#   Starter: "When I say to Google: Emma finished dishes"  →  Action: Adjust home devices → "Haven Emma Dishes" → Turn on',
     "rest_command:",
     "  haven_voice:",
-    `    url: "${baseUrl}/api/voice/command"`,
+    `    url: ${JSON.stringify(`${baseUrl}/api/voice/command`)}`,
     "    method: post",
     "    headers:",
     `      X-Haven-Token: "${token}"`,
@@ -197,6 +201,9 @@ export function homeAssistantYaml(ctx: Ctx, baseUrl: string, token: string): str
     "script:",
   ];
   const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+  // Names and titles are typed by anyone in the family: keep each on one line, as a quoted YAML string,
+  // without Home Assistant template braces, so a chore name can't add its own config.
+  const yamlStr = (s: string) => JSON.stringify(s.replace(/[\u0000-\u001f\u2028\u2029{}%]+/g, " ").replace(/"/g, "'").trim());
   for (const p of profiles) {
     for (const i of tasks.filter((t) => t.profileId === p.id || t.profileId === null)) {
       const id = `haven_${slug(p.name)}_${slug(i.task.title)}`;
@@ -204,11 +211,11 @@ export function homeAssistantYaml(ctx: Ctx, baseUrl: string, token: string): str
       seen.add(id);
       lines.push(
         `  ${id}:`,
-        `    alias: "Haven ${p.name} ${i.task.title.replace(/"/g, "'")}"`,
+        `    alias: ${yamlStr(`Haven ${p.name} ${i.task.title}`)}`,
         "    sequence:",
         "      - action: rest_command.haven_voice",
         "        data:",
-        `          text: "${p.name} finished ${i.task.title.replace(/"/g, "'")}"`,
+        `          text: ${yamlStr(`${p.name} finished ${i.task.title}`)}`,
       );
     }
   }

@@ -178,7 +178,7 @@ export default function EmailSection() {
                   />
                 </Field>
                 <span className="muted" style={{ fontSize: 15, marginTop: -6 }}>
-                  Recommended: list the parents' addresses so only your forwards are imported. Leave empty to accept anyone.
+                  Recommended: list the parents' addresses so your forwards go straight onto the calendar. Left empty, emails from anyone are read but wait in Sidekick for you to review.
                 </span>
                 <button type="button" className="link row" style={{ gap: 4, alignSelf: "flex-start" }} onClick={() => setAdvanced(!advanced)}>
                   {advanced ? <ChevronUp size={18} /> : <ChevronDown size={18} />}

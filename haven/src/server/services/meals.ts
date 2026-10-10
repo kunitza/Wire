@@ -86,6 +86,9 @@ export function getRecipe(ctx: Ctx, id: number): Recipe | null {
 
 export type RecipeInput = Omit<Recipe, "id">;
 
+/** Recipe links are shown as clickable links: only keep web addresses (no javascript: or data: URLs). */
+const webUrl = (u: unknown) => (typeof u === "string" && /^https?:\/\//i.test(u.trim()) ? u.trim() : "");
+
 export function createRecipe(ctx: Ctx, input: RecipeInput): Recipe {
   if (!input.title?.trim()) throw new MealError("Recipe name is required");
   const res = ctx.db
@@ -96,7 +99,7 @@ export function createRecipe(ctx: Ctx, input: RecipeInput): Recipe {
       input.categoryId ?? null,
       JSON.stringify((input.ingredients ?? []).map((s) => s.trim()).filter(Boolean)),
       input.instructions ?? "",
-      input.sourceUrl ?? "",
+      webUrl(input.sourceUrl),
       input.favorite ? 1 : 0,
     );
   ctx.bus.emit("recipes");
@@ -115,7 +118,7 @@ export function updateRecipe(ctx: Ctx, id: number, patch: Partial<RecipeInput>):
       n.categoryId,
       JSON.stringify(n.ingredients.map((s) => s.trim()).filter(Boolean)),
       n.instructions,
-      n.sourceUrl,
+      webUrl(n.sourceUrl),
       n.favorite ? 1 : 0,
       id,
     );

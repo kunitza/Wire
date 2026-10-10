@@ -236,3 +236,7 @@
   /* Tablet portrait: two columns side by side. */
   .tasks-col, .rw-col { flex-basis: calc(50vw - 18px); }
 }
+
+/* Repeatable chores: count ring */
+.tasks-multi-check { border-radius: 99px; background: #fff; flex: none; display: inline-flex; align-items: center; justify-content: center; }
+.tasks-multi-check:active { transform: scale(0.95); }

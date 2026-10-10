@@ -10,8 +10,13 @@ Voice is for **kids' check-offs**. On purpose, it can only do these things:
 | "How many stars does Emma have?" | Says the balance |
 | "Undo Emma dishes" | Unchecks it |
 | "Add milk to the grocery list" | Only works if a parent turns on *Settings → Voice → Allow adding to lists* |
+| "Set a 12 minute pasta timer" / "Set a timer for an hour and a half" | Starts a kitchen timer, which rings on the wall display |
+| "How much time is left on the pasta timer?" | Says the time left |
+| "Cancel the pasta timer" / "Stop the timer" | Cancels it, or silences one that's ringing |
 
 Voice can't add, edit or delete events, chores or rewards, and it can't change settings.
+
+The Google Home routes need a Home Assistant script for each phrase. For timers it's often easier to use the Google speaker's own built-in timers, and Haven's timers through Siri.
 
 **The voice token**
 - Requests are protected by a secret **voice token**. Find it in *Settings → Voice*, where you can also regenerate it.

@@ -1,6 +1,7 @@
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import cookie from "@fastify/cookie";
 import fastifyStatic from "@fastify/static";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { exec } from "node:child_process";
@@ -19,6 +20,8 @@ import * as weather from "./lib/weather.js";
 import * as ai from "./lib/ai.js";
 import * as email from "./lib/email.js";
 import { homeAssistantYaml, runVoiceCommand } from "./lib/voice.js";
+import * as timers from "./services/timers.js";
+import { handleMcpMessage } from "./lib/mcp.js";
 import { seedDemo } from "./seed.js";
 import { addDays, localDateOf } from "../shared/dates.js";
 import type { ChangeTopic, EditScope } from "../shared/types.js";
@@ -45,6 +48,25 @@ export function lanAddresses(): string[] {
   return out.sort((a, b) => rank(a) - rank(b));
 }
 
+/**
+ * Host names Haven answers to: IP addresses, single-label LAN names (localhost, raspberrypi), home/LAN suffixes
+ * and Tailscale MagicDNS, plus HAVEN_ALLOWED_HOSTS. Anything else is a public domain, which in a browser means
+ * a DNS-rebinding page trying to talk to Haven as if it were the same site.
+ */
+export function isLocalHost(host: string | undefined, extra: string[] = []): boolean {
+  if (!host) return false;
+  const h = host.toLowerCase().trim();
+  if (/^\[[0-9a-f:.]+\](:\d+)?$/.test(h)) return true; // IPv6 literal
+  const name = h.replace(/:\d+$/, "").replace(/\.$/, "");
+  if (!/^[a-z0-9.-]+$/.test(name)) return false;
+  if (extra.includes(name)) return true;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(name)) return true;
+  if (!name.includes(".")) return true;
+  return /\.(local|lan|home|internal|home\.arpa|localdomain|localhost|ts\.net)$/.test(name);
+}
+
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
 class HttpError extends Error {
   constructor(
     public status: number,
@@ -68,6 +90,24 @@ export async function buildApp(ctx: Ctx) {
   const app = Fastify({ logger: false, bodyLimit: 40 * 1024 * 1024 });
   await app.register(cookie);
 
+  // Haven has no accounts, so make sure requests come from Haven's own pages: reject unknown Host names
+  // (DNS rebinding) and writes started by another website (cross-site request forgery).
+  app.addHook("onRequest", async (req, reply) => {
+    const extra = ctx.config.allowedHosts ?? [];
+    if (req.headers.host !== undefined && !isLocalHost(req.headers.host, extra))
+      return reply.status(403).send({ error: "Unknown host name. Add it to HAVEN_ALLOWED_HOSTS in /etc/haven.env." });
+    const origin = req.headers.origin;
+    if (origin !== undefined && !SAFE_METHODS.has(req.method)) {
+      let host: string | undefined;
+      try {
+        host = new URL(origin).host;
+      } catch {
+        /* "null" or garbage */
+      }
+      if (!isLocalHost(host, extra)) return reply.status(403).send({ error: "Requests from other websites aren't allowed" });
+    }
+  });
+
   // Every browser gets a long-lived session id; Parental Lock unlocks are tracked per session.
   app.addHook("onRequest", async (req, reply) => {
     // Voice commands (Siri/Home Assistant) authenticate with a token and need no browser session.
@@ -82,11 +122,21 @@ export async function buildApp(ctx: Ctx) {
     (req as FastifyRequest & { sid: string }).sid = sid;
   });
   const sid = (req: FastifyRequest) => (req as FastifyRequest & { sid?: string }).sid;
-  const guard = (action: "add" | "modify") => async (req: FastifyRequest) => {
+  const guard = (action: "add" | "modify" | "admin") => async (req: FastifyRequest) => {
     if (!settings.mayEdit(ctx, sid(req), action)) throw new HttpError(423, "Locked. Enter the parent PIN to make changes.");
   };
   const add = { preHandler: guard("add") };
   const modify = { preHandler: guard("modify") };
+  // Parental Lock settings, secrets and backups: always need the PIN while the lock is on, even if it only covers adding.
+  const admin = { preHandler: guard("admin") };
+  const pinOk = (pin: unknown) => {
+    const r = settings.tryPin(ctx, String(pin ?? ""));
+    if (r.retryInSeconds) {
+      const min = Math.ceil(r.retryInSeconds / 60);
+      throw new HttpError(429, `Too many wrong PINs. Try again in ${min} minute${min === 1 ? "" : "s"}.`);
+    }
+    return r.ok;
+  };
 
   app.setErrorHandler((err: Error & { status?: number; statusCode?: number }, _req, reply) => {
     const status =
@@ -125,7 +175,7 @@ export async function buildApp(ctx: Ctx) {
   app.get("/api/session", async (req) => settings.sessionInfo(ctx, sid(req)));
   app.post("/api/session/unlock", async (req) => {
     const { pin, remember } = (req.body ?? {}) as { pin?: string; remember?: boolean };
-    if (!settings.checkPin(ctx, String(pin ?? ""))) throw new HttpError(403, "Incorrect PIN");
+    if (!pinOk(pin)) throw new HttpError(403, "Incorrect PIN");
     settings.unlockSession(ctx, sid(req)!, !!remember);
     return settings.sessionInfo(ctx, sid(req));
   });
@@ -136,8 +186,8 @@ export async function buildApp(ctx: Ctx) {
   app.post("/api/pin", async (req) => {
     const { pin, currentPin } = (req.body ?? {}) as { pin?: string; currentPin?: string };
     const hasPin = settings.getSettings(ctx).lock.hasPin;
-    if (hasPin && !settings.sessionInfo(ctx, sid(req)).canEdit && !settings.checkPin(ctx, String(currentPin ?? "")))
-      throw new HttpError(403, "Enter the current PIN first");
+    // Changing an existing PIN needs a browser unlocked with it (or the current PIN), even while the lock is off.
+    if (hasPin && !settings.sessionInfo(ctx, sid(req)).unlockedUntil && !pinOk(currentPin)) throw new HttpError(403, "Enter the current PIN first");
     settings.setPin(ctx, String(pin ?? ""));
     settings.unlockSession(ctx, sid(req)!, false);
     return { ok: true };
@@ -172,7 +222,9 @@ export async function buildApp(ctx: Ctx) {
     });
   app.put("/api/settings", async (req) => {
     const patch = (req.body ?? {}) as Record<string, unknown>;
-    if (!viewOnly(patch) && !settings.mayEdit(ctx, sid(req), "modify")) throw new HttpError(423, "Locked. Enter the parent PIN to make changes.");
+    if (!patch || typeof patch !== "object") throw new HttpError(400, "Invalid settings");
+    const action = ["lock", "voice", "ai"].some((k) => k in patch) ? "admin" : viewOnly(patch) ? null : "modify";
+    if (action && !settings.mayEdit(ctx, sid(req), action)) throw new HttpError(423, "Locked. Enter the parent PIN to make changes.");
     const before = settings.getSettings(ctx);
     settings.updateSettings(ctx, patch);
     const after = settings.getSettings(ctx);
@@ -180,13 +232,13 @@ export async function buildApp(ctx: Ctx) {
       weather.refreshWeather(ctx).catch(() => undefined);
     return after;
   });
-  app.put("/api/ai/key", modify, async (req) => {
+  app.put("/api/ai/key", admin, async (req) => {
     const { key } = (req.body ?? {}) as { key?: string };
     ctx.settings.set("anthropicApiKey", key?.trim() || null);
     ctx.bus.emit("settings");
     return settings.getSettings(ctx).ai;
   });
-  app.get("/api/backup", modify, async (_req, reply) => {
+  app.get("/api/backup", admin, async (_req, reply) => {
     const file = path.join(ctx.config.dataDir, `backup-${Date.now()}.db`);
     ctx.db.exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`);
     const buf = fs.readFileSync(file);
@@ -474,17 +526,17 @@ export async function buildApp(ctx: Ctx) {
   app.get("/api/geocode", async (req) => weather.geocode(String((req.query as { q?: string }).q ?? "")));
 
   // ---------- Email import ----------
-  app.get("/api/email-config", modify, async () => {
+  app.get("/api/email-config", admin, async () => {
     const c = email.getEmailConfig(ctx);
     return c ? { ...c, password: c.password ? "••••••••" : "" } : null;
   });
-  app.put("/api/email-config", modify, async (req) => {
+  app.put("/api/email-config", admin, async (req) => {
     const b = req.body as Partial<email.EmailConfig> | null;
     if (b && b.password === "••••••••") delete b.password;
     email.setEmailConfig(ctx, b);
     return { ok: true };
   });
-  app.post("/api/email/check", modify, async () => ({ imported: await email.checkEmail(ctx), settings: settings.getSettings(ctx).email }));
+  app.post("/api/email/check", admin, async () => ({ imported: await email.checkEmail(ctx), settings: settings.getSettings(ctx).email }));
 
   // ---------- Voice (Siri Shortcuts / Google Home via Home Assistant) ----------
   const voiceAuth = (req: FastifyRequest) => {
@@ -492,7 +544,11 @@ export async function buildApp(ctx: Ctx) {
     if (!v.enabled) throw new HttpError(403, "Voice control is turned off");
     const token = (req.headers["x-haven-token"] as string | undefined) ?? (req.query as { token?: string }).token;
     const expected = settings.voiceToken(ctx);
-    if (!expected || token !== expected) throw new HttpError(401, "Bad voice token");
+    const same = (a: string, b: string) => {
+      const x = crypto.createHash("sha256").update(a).digest();
+      return crypto.timingSafeEqual(x, crypto.createHash("sha256").update(b).digest());
+    };
+    if (!expected || typeof token !== "string" || !same(token, expected)) throw new HttpError(401, "Bad voice token");
     return v;
   };
   const speak = (reply: FastifyReply, req: FastifyRequest, r: { ok: boolean; speech: string }) =>
@@ -507,8 +563,8 @@ export async function buildApp(ctx: Ctx) {
     const v = voiceAuth(req);
     return speak(reply, req, runVoiceCommand(ctx, String((req.query as { text?: string }).text ?? ""), { allowListAdd: v.allowListAdd }));
   });
-  app.post("/api/voice/token", modify, async () => ({ token: settings.setVoiceToken(ctx) }));
-  app.get("/api/voice/setup", modify, async (req) => {
+  app.post("/api/voice/token", admin, async () => ({ token: settings.setVoiceToken(ctx) }));
+  app.get("/api/voice/setup", admin, async (req) => {
     let token = settings.voiceToken(ctx);
     if (!token) token = settings.setVoiceToken(ctx);
     // On the wall display the page is opened as localhost; phones/Home Assistant need the LAN address.
@@ -516,6 +572,58 @@ export async function buildApp(ctx: Ctx) {
     if (/^(localhost|127\.|\[::1\])/.test(host) && lanAddresses()[0]) host = `${lanAddresses()[0]}:${ctx.config.port}`;
     const base = `http://${host}`;
     return { token, commandUrl: `${base}/api/voice/command`, homeAssistantYaml: homeAssistantYaml(ctx, base, token) };
+  });
+
+  // ---------- Kitchen timers (kid-safe: not covered by Parental Lock) ----------
+  app.get("/api/timers", async () => timers.listTimers(ctx));
+  app.post("/api/timers", async (req) => {
+    const b = (req.body ?? {}) as { seconds?: number; label?: string };
+    return timers.createTimer(ctx, Number(b.seconds), typeof b.label === "string" ? b.label : undefined);
+  });
+  app.post("/api/timers/:id/pause", async (req) => timers.pauseTimer(ctx, num((req.params as { id: string }).id)));
+  app.post("/api/timers/:id/resume", async (req) => timers.resumeTimer(ctx, num((req.params as { id: string }).id)));
+  app.post("/api/timers/:id/add", async (req) =>
+    timers.addTime(ctx, num((req.params as { id: string }).id), Number((req.body as { seconds?: number } | undefined)?.seconds ?? 60)),
+  );
+  app.delete("/api/timers/:id", async (req) => {
+    timers.dismissTimer(ctx, num((req.params as { id: string }).id));
+    return { ok: true };
+  });
+
+  // ---------- Claude connector (Model Context Protocol over HTTP) ----------
+  const tokenMatches = (given: unknown, expected: string | null) => {
+    if (!expected || typeof given !== "string") return false;
+    const h = (v: string) => crypto.createHash("sha256").update(v).digest();
+    return crypto.timingSafeEqual(h(given), h(expected));
+  };
+  app.post("/mcp", async (req, reply) => {
+    const auth = String(req.headers.authorization ?? "");
+    const token = auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : undefined;
+    if (!tokenMatches(token, ctx.settings.get<string | null>("mcpToken", null))) {
+      reply.header("WWW-Authenticate", 'Bearer realm="haven"');
+      return reply.status(401).send({ jsonrpc: "2.0", id: null, error: { code: -32001, message: "Missing or wrong Haven connector token" } });
+    }
+    const body = req.body as unknown;
+    const msgs = Array.isArray(body) ? body : [body];
+    if (!msgs.length || msgs.some((m) => !m || typeof m !== "object" || typeof (m as { method?: unknown }).method !== "string"))
+      return reply.status(400).send({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid request" } });
+    const out = msgs.map((m) => handleMcpMessage(ctx, m as Parameters<typeof handleMcpMessage>[1], VERSION)).filter((r) => r !== null);
+    if (!out.length) return reply.status(202).send();
+    return reply.type("application/json").send(Array.isArray(body) ? out : out[0]);
+  });
+  app.get("/mcp", async (_req, reply) => reply.status(405).header("Allow", "POST").send({ error: "Use POST (Streamable HTTP, JSON responses)" }));
+  app.get("/api/connector", admin, async (req) => {
+    const token = ctx.settings.get<string | null>("mcpToken", null);
+    let host = req.headers.host ?? `localhost:${ctx.config.port}`;
+    if (/^(localhost|127\.|\[::1\])/.test(host) && lanAddresses()[0]) host = `${lanAddresses()[0]}:${ctx.config.port}`;
+    return { enabled: !!token, token, url: `http://${host}/mcp` };
+  });
+  app.post("/api/connector", admin, async (req) => {
+    const on = (req.body as { enabled?: boolean } | undefined)?.enabled !== false;
+    if (on) ctx.settings.set("mcpToken", crypto.randomBytes(24).toString("base64url"));
+    else ctx.settings.delete("mcpToken");
+    ctx.bus.emit("settings");
+    return { ok: true };
   });
 
   // ---------- Display power (sleep mode on the Pi) ----------
@@ -558,6 +666,10 @@ export function startBackgroundJobs(ctx: Ctx) {
     backupDatabase(ctx);
     const cutoff = addDays(localDateOf(ctx.now()), -90);
     ctx.db.prepare("DELETE FROM imports WHERE created_at < ? AND status IN ('dismissed','undone','failed')").run(cutoff);
+    // Browsers that never unlocked (or whose unlock ran out) hold no state; don't let them pile up forever.
+    ctx.db
+      .prepare("DELETE FROM sessions WHERE created_at < ? AND (unlocked_until IS NULL OR unlocked_until < ?)")
+      .run(addDays(localDateOf(ctx.now()), -30), ctx.now().toISOString());
   });
 }
 

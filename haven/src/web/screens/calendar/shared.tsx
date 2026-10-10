@@ -4,6 +4,7 @@ import type { CalendarEvent, Meal, MealCategory, Profile } from "../../../shared
 import { useApp, useLive } from "../../lib/store";
 import { Avatar, AvatarStack } from "../../components/ui";
 import { fmtRange, fmtTime, shortDate, weatherEmoji } from "../../lib/format";
+import { openWeather } from "../../components/WeatherDialog";
 import { dayOf, eventBackground, eventColors, isPast, lastDay, type CalSettings } from "./model";
 
 // ---------- Settings helpers ----------
@@ -234,7 +235,17 @@ export function WeatherTag({ date, temp = false }: { date: string; temp?: boolea
   const w = useWeatherFor()(date);
   if (!w) return null;
   return (
-    <span className="cal-wx" title={`${w.max}° / ${w.min}°`}>
+    <span
+      className="cal-wx"
+      title={`${w.max}° / ${w.min}° · tap for the hourly forecast`}
+      role="button"
+      tabIndex={0}
+      style={{ cursor: "pointer" }}
+      onClick={(e) => {
+        e.stopPropagation();
+        openWeather(date);
+      }}
+    >
       <span aria-hidden>{weatherEmoji(w.code)}</span>
       {temp && <span className="serif">{w.max}°</span>}
     </span>

@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Calendar, CheckSquare, Star, Utensils, BookOpen, Sparkles, Moon, Settings as Gear, List as ListIcon, Home, Lock, Unlock, Check, MoreHorizontal, AlertCircle } from "lucide-react";
+import { Hourglass, Calendar, CheckSquare, Star, Utensils, BookOpen, Sparkles, Moon, Settings as Gear, List as ListIcon, Home, Lock, Unlock, Check, MoreHorizontal, AlertCircle } from "lucide-react";
 import { useApp, type Screen } from "../lib/store";
 import { clock, fmtTime, headerDate, weatherEmoji } from "../lib/format";
-import { post, get, put } from "../lib/api";
+import { ApiError, post, get, put } from "../lib/api";
 import { Modal, ToggleRow } from "./ui";
+import { openWeather } from "./WeatherDialog";
+import { openTimers, useTimers } from "./Timers";
 import type { CalendarEvent, SessionInfo, TaskInstance } from "../../shared/types";
 import { addDays } from "../../shared/dates";
 
@@ -33,6 +35,7 @@ export function Sidebar({ onSleep }: { onSleep: () => void }) {
         </button>
       ))}
       <div className="spacer" />
+      <TimersNavItem />
       {session.lockEnabled && (
         <button
           className="nav-item"
@@ -56,6 +59,17 @@ export function Sidebar({ onSleep }: { onSleep: () => void }) {
         Settings
       </button>
     </nav>
+  );
+}
+
+function TimersNavItem() {
+  const { timers } = useTimers();
+  return (
+    <button className="nav-item" onClick={openTimers}>
+      {timers.length > 0 && <span className="badge">{timers.length}</span>}
+      <Hourglass />
+      Timers
+    </button>
   );
 }
 
@@ -106,6 +120,17 @@ export function BottomNav() {
                 {n.label}
               </button>
             ))}
+            <button
+              className="col"
+              style={{ alignItems: "center", padding: 14, borderRadius: 20, background: "var(--fill-2)", gap: 8 }}
+              onClick={() => {
+                setMore(false);
+                openTimers();
+              }}
+            >
+              <Hourglass size={28} />
+              Timers
+            </button>
           </div>
         </Modal>
       )}
@@ -127,7 +152,7 @@ export function Header({ children, title }: { children?: ReactNode; title?: Reac
         {clock(now, settings.clock24h)}
       </div>
       {weather.current ? (
-        <div className="wx hide-phone" title="Weather">
+        <div className="wx hide-phone" title="Weather" role="button" tabIndex={0} onClick={() => openWeather()} onKeyDown={(e) => e.key === "Enter" && openWeather()}>
           <span className="wx-icon">{weatherEmoji(weather.current.code, weather.current.isDay)}</span>
           {weather.current.temp}°
         </div>
@@ -157,7 +182,7 @@ export function Fab({ onClick, label = "Add" }: { onClick: () => void; label?: s
 export function PinPad() {
   const { pinPrompt, setPinPrompt, reload, toast } = useApp();
   const [pin, setPin] = useState("");
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<string | false>(false);
   const [remember, setRemember] = useState(false);
   const [forgot, setForgot] = useState(false);
   useEffect(() => {
@@ -176,8 +201,8 @@ export function PinPad() {
       await post<SessionInfo>("/api/session/unlock", { pin: p, remember });
       await reload();
       close(true);
-    } catch {
-      setError(true);
+    } catch (e) {
+      setError(e instanceof ApiError && e.status === 429 ? e.message : "That PIN didn't match. Try again.");
       setPin("");
       if (navigator.vibrate) navigator.vibrate(120);
     }
@@ -197,7 +222,7 @@ export function PinPad() {
             <span key={i} style={{ width: 22, height: 22, borderRadius: 99, background: i < pin.length ? "var(--text)" : "var(--fill-3)", transition: "background 0.1s" }} />
           ))}
         </div>
-        {error && <div className="error-text">That PIN didn't match. Try again.</div>}
+        {error && <div className="error-text">{error}</div>}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 84px)", gap: 14 }}>
           {["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"].map((k, i) =>
             k === "" ? (

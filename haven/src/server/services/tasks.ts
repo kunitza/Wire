@@ -17,6 +17,7 @@ interface Row {
   due_time: string | null;
   parts: string;
   track_habit: number;
+  max_per_day: number;
   sort: number;
   created_at: string;
 }
@@ -36,6 +37,7 @@ function toTask(r: Row): Task & { createdAt: string } {
     dueTime: r.due_time,
     parts: json.parse<DayPart[]>(r.parts, []),
     trackHabit: !!r.track_habit,
+    maxPerDay: r.kind === "chore" ? Math.max(1, r.max_per_day ?? 1) : 1,
     sort: r.sort,
     createdAt: r.created_at,
   };
@@ -66,7 +68,7 @@ export function getTask(ctx: Ctx, id: number): Task | null {
   return t;
 }
 
-export type TaskInput = Omit<Task, "id" | "sort">;
+export type TaskInput = Omit<Task, "id" | "sort" | "maxPerDay"> & { maxPerDay?: number };
 
 const ALL_PARTS: DayPart[] = ["morning", "afternoon", "evening"];
 
@@ -81,6 +83,7 @@ function normalize(input: TaskInput, today: string): TaskInput {
   t.emoji = t.emoji ?? "";
   t.trackHabit = !!t.trackHabit;
   t.repeatUntil = t.repeatUntil || null;
+  t.maxPerDay = t.kind === "chore" ? Math.max(1, Math.min(20, Math.round(Number(t.maxPerDay) || 1))) : 1;
   t.dueTime = t.dueTime || null;
   if (t.kind === "routine") {
     if (!t.profileIds.length) throw new TaskError("Routines need at least one person");
@@ -105,8 +108,8 @@ export function createTask(ctx: Ctx, raw: TaskInput): Task {
   const res = ctx.db
     .prepare(
       `INSERT INTO tasks (kind, title, description, emoji, profile_ids, stars, repeat, repeat_until, date, due_time,
-                          parts, track_habit, sort, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                          parts, track_habit, sort, created_at, max_per_day)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       input.kind,
@@ -123,6 +126,7 @@ export function createTask(ctx: Ctx, raw: TaskInput): Task {
       input.trackHabit ? 1 : 0,
       sort,
       localDateOf(ctx.now()),
+      input.maxPerDay ?? 1,
     );
   ctx.bus.emit("tasks");
   return getTask(ctx, Number(res.lastInsertRowid))!;
@@ -135,7 +139,7 @@ export function updateTask(ctx: Ctx, id: number, patch: Partial<TaskInput>): Tas
   ctx.db
     .prepare(
       `UPDATE tasks SET kind = ?, title = ?, description = ?, emoji = ?, profile_ids = ?, stars = ?, repeat = ?,
-              repeat_until = ?, date = ?, due_time = ?, parts = ?, track_habit = ? WHERE id = ?`,
+              repeat_until = ?, date = ?, due_time = ?, parts = ?, track_habit = ?, max_per_day = ? WHERE id = ?`,
     )
     .run(
       input.kind,
@@ -150,6 +154,7 @@ export function updateTask(ctx: Ctx, id: number, patch: Partial<TaskInput>): Tas
       input.dueTime,
       JSON.stringify(input.parts),
       input.trackHabit ? 1 : 0,
+      input.maxPerDay ?? 1,
       id,
     );
   ctx.bus.emit("tasks");
@@ -185,6 +190,7 @@ interface CompletionRow {
   day: string;
   profile_id: number | null;
   status: "done" | "skipped";
+  count: number;
   completed_at: string;
 }
 
@@ -235,7 +241,7 @@ export function taskInstances(ctx: Ctx, from: string, to: string, opts: { kind?:
   const tasks = listTaskRows(ctx).filter((t) => !opts.kind || t.kind === opts.kind);
   const comps = ctx.db
     .prepare(
-      "SELECT task_id, occurrence, part, slot, day, profile_id, status, completed_at FROM completions WHERE occurrence >= ? OR occurrence = 'once' OR day >= ?",
+      "SELECT task_id, occurrence, part, slot, day, profile_id, status, count, completed_at FROM completions WHERE occurrence >= ? OR occurrence = 'once' OR day >= ?",
     )
     .all(addDays(from, -400), from) as unknown as CompletionRow[];
   const byKey = new Map(comps.map((c) => [ckey(c.task_id, c.occurrence, c.part, c.slot), c]));
@@ -252,11 +258,13 @@ export function taskInstances(ctx: Ctx, from: string, to: string, opts: { kind?:
       occurrence,
       part,
       profileId: slot,
-      status: c ? c.status : "open",
+      // Repeatable chores stay open until they've been done maxPerDay times.
+      status: !c ? "open" : c.status === "skipped" ? "skipped" : (c.count ?? 1) >= (task.maxPerDay || 1) ? "done" : "open",
       completedBy: c?.profile_id ?? null,
       completedAt: c?.completed_at ?? null,
       late,
       streak: 0,
+      count: c && c.status === "done" ? (c.count ?? 1) : 0,
     });
   };
 
@@ -397,10 +405,28 @@ export function completeTask(ctx: Ctx, a: CompleteArgs): { stars: number; alread
   const credit = a.slot ?? a.creditTo ?? null;
   if (a.slot === null && status === "done" && credit === null) throw new TaskError("Choose who completed this task");
   const part = task.kind === "routine" ? (a.part ?? task.parts[0] ?? "morning") : "";
+  // Only real occurrences (and parts of the day) can be checked off, so stars can't be collected for made-up ones.
+  const isDay = typeof a.occurrence === "string" && /^\d{4}-\d{2}-\d{2}$/.test(a.occurrence);
+  const real =
+    task.repeat.type === "none"
+      ? a.occurrence === (task.date ?? "once")
+      : isDay && (task.repeat.type === "afterCompletion" || !task.date || occursOn(task.repeat, task.date, a.occurrence, task.repeatUntil));
+  if (!real || (task.kind === "routine" && !(task.parts.length ? task.parts : ALL_PARTS.slice(0, 1)).includes(part as DayPart)))
+    throw new TaskError("That task isn't due then");
   const existing = ctx.db
-    .prepare("SELECT status FROM completions WHERE task_id = ? AND occurrence = ? AND part = ? AND slot = ?")
-    .get(task.id, a.occurrence, part, slotOf(a.slot)) as { status: string } | undefined;
-  if (existing) return { stars: 0, alreadyDone: true };
+    .prepare("SELECT id, status, count FROM completions WHERE task_id = ? AND occurrence = ? AND part = ? AND slot = ?")
+    .get(task.id, a.occurrence, part, slotOf(a.slot)) as { id: number; status: string; count: number } | undefined;
+  if (existing) {
+    // Repeatable chore: count another completion (each one earns the chore's stars).
+    if (status === "done" && existing.status === "done" && existing.count < task.maxPerDay) {
+      ctx.db
+        .prepare("UPDATE completions SET count = count + 1, stars = stars + ?, completed_at = ? WHERE id = ?")
+        .run(credit === null ? 0 : task.stars, ctx.now().toISOString(), existing.id);
+      ctx.bus.emit("tasks", "stars", "profiles");
+      return { stars: credit === null ? 0 : task.stars, alreadyDone: false };
+    }
+    return { stars: 0, alreadyDone: true };
+  }
   const stars = status === "done" && credit !== null ? task.stars : 0;
   const now = ctx.now();
   ctx.db
@@ -414,6 +440,16 @@ export function completeTask(ctx: Ctx, a: CompleteArgs): { stars: number; alread
 }
 
 export function uncompleteTask(ctx: Ctx, taskId: number, occurrence: string, part: DayPart | null, slot: number | null): boolean {
+  // Repeatable chores undo one completion at a time.
+  const row = ctx.db
+    .prepare("SELECT id, count, stars FROM completions WHERE task_id = ? AND occurrence = ? AND part = ? AND slot = ?")
+    .get(taskId, occurrence, part ?? "", slotOf(slot)) as { id: number; count: number; stars: number } | undefined;
+  if (row && row.count > 1) {
+    const per = Math.round(row.stars / row.count);
+    ctx.db.prepare("UPDATE completions SET count = count - 1, stars = stars - ? WHERE id = ?").run(per, row.id);
+    ctx.bus.emit("tasks", "stars", "profiles");
+    return true;
+  }
   const res = ctx.db
     .prepare("DELETE FROM completions WHERE task_id = ? AND occurrence = ? AND part = ? AND slot = ?")
     .run(taskId, occurrence, part ?? "", slotOf(slot));

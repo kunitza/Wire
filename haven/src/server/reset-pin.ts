@@ -7,6 +7,7 @@ const config = loadConfig();
 const db = openDb(config.dbFile);
 const settings = new SettingsStore(db);
 settings.delete("pinHash");
+settings.delete("pinFailures");
 const lock = settings.get<Record<string, unknown> | null>("lock", null);
 if (lock) settings.set("lock", { ...lock, enabled: false });
 db.prepare("UPDATE sessions SET unlocked_until = NULL").run();

@@ -49,6 +49,9 @@ HAVEN_DATA_DIR=$HAVEN_DIR/data
 #ANTHROPIC_API_KEY=
 # Optional: model for Sidekick (default claude-opus-5-5)
 #HAVEN_AI_MODEL=claude-opus-5-5
+# Haven answers to IP addresses, localhost, *.local, *.lan, *.home.arpa and Tailscale (*.ts.net) names.
+# Opening it under another name (e.g. via your router's DNS)? List it here, comma-separated.
+#HAVEN_ALLOWED_HOSTS=haven.example.com
 # Turn the monitor off/on for Sleep Mode
 HAVEN_DISPLAY_OFF_CMD=$HAVEN_DIR/deploy/display.sh off
 HAVEN_DISPLAY_ON_CMD=$HAVEN_DIR/deploy/display.sh on
@@ -57,6 +60,7 @@ ENV
   sudo chown "$RUN_USER" "$ENV_FILE"
 fi
 chmod +x "$HAVEN_DIR/deploy/"*.sh
+mkdir -p "$HAVEN_DIR/data" && chmod -R go-rwx "$HAVEN_DIR/data"
 
 sudo tee /etc/systemd/system/haven.service >/dev/null <<UNIT
 [Unit]
@@ -70,6 +74,8 @@ WorkingDirectory=$HAVEN_DIR
 EnvironmentFile=$ENV_FILE
 Environment=XDG_RUNTIME_DIR=/run/user/$(id -u "$RUN_USER")
 ExecStart=$(command -v node) --disable-warning=ExperimentalWarning dist/server/index.js
+# The database and its backups hold the API key, the mailbox password and calendar links: owner-only files.
+UMask=0077
 Restart=always
 RestartSec=3
 

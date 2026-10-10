@@ -33,8 +33,8 @@ export function PinSetDialog({ onClose }: { onClose: () => void }) {
         await post("/api/session/unlock", { pin, remember: false });
         setCurrent(pin);
         setStep("new");
-      } catch {
-        setError("That PIN didn't match. Try again.");
+      } catch (e) {
+        setError(e instanceof ApiError && e.status === 429 ? e.message : "That PIN didn't match. Try again.");
       }
     } else if (step === "new") {
       setFirst(pin);

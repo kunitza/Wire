@@ -10,6 +10,7 @@ export type SettingsSection =
   | "reminders"
   | "rewards"
   | "voice"
+  | "connector"
   | "ai"
   | "email"
   | "backup";

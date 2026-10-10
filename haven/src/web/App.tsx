@@ -5,6 +5,8 @@ import { BottomNav, EmojiRain, PinPad, Reminders, Sidebar, SleepController, Slee
 import HomeScreen from "./screens/HomeScreen";
 import Onboarding from "./screens/Onboarding";
 import { OnScreenKeyboard, useKioskKeyboard } from "./components/Keyboard";
+import { WeatherDialog } from "./components/WeatherDialog";
+import { TimerLayer } from "./components/Timers";
 
 const CalendarScreen = lazy(() => import("./screens/calendar/CalendarScreen"));
 const TasksScreen = lazy(() => import("./screens/tasks/TasksScreen"));
@@ -66,6 +68,8 @@ function Shell() {
       <SleepController />
       <Reminders />
       {sleepDialog && <SleepDialog onClose={() => setSleepDialog(false)} />}
+      <WeatherDialog />
+      <TimerLayer />
       {keyboard && <OnScreenKeyboard />}
     </div>
   );

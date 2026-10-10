@@ -206,6 +206,20 @@ const MIGRATIONS: string[] = [
     created_at TEXT NOT NULL
   );
   `,
+  // v2: repeatable chores, kitchen timers
+  `
+  ALTER TABLE tasks ADD COLUMN max_per_day INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE completions ADD COLUMN count INTEGER NOT NULL DEFAULT 1;
+  CREATE TABLE timers (
+    id INTEGER PRIMARY KEY,
+    label TEXT NOT NULL,
+    duration_sec INTEGER NOT NULL,
+    ends_at TEXT,
+    remaining_sec INTEGER,
+    dismissed INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+  );
+  `,
 ];
 
 export function openDb(file: string): DB {

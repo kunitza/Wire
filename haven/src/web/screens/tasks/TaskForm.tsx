@@ -33,6 +33,7 @@ interface Draft {
   routineRepeat: Repeat;
   parts: DayPart[];
   trackHabit: boolean;
+  maxPerDay: number;
 }
 
 function initial(task: Task | null | undefined, defaults: Partial<Task> | undefined, today: string): Draft {
@@ -55,6 +56,7 @@ function initial(task: Task | null | undefined, defaults: Partial<Task> | undefi
     routineRepeat: kind === "routine" && t.repeat && (t.repeat.type === "daily" || t.repeat.type === "weekly") ? t.repeat : { type: "daily", interval: 1 },
     parts: t.parts?.length ? t.parts : ["morning"],
     trackHabit: t.trackHabit ?? (task ? false : true),
+    maxPerDay: t.maxPerDay ?? 1,
   };
 }
 
@@ -114,6 +116,7 @@ export function TaskForm({
       dueTime: isChore && (d.hasDate || repeating) && d.hasTime ? d.dueTime : null,
       parts: isChore ? [] : d.parts,
       trackHabit: isChore ? false : d.trackHabit,
+      maxPerDay: isChore ? d.maxPerDay : 1,
     };
     setSaving(true);
     try {
@@ -184,6 +187,15 @@ export function TaskForm({
         </span>
         <StarStepper value={d.stars} onChange={(n) => set({ stars: n })} />
       </div>
+      {isChore && (
+        <div className="check-row">
+          <span className="grow">
+            Times per day
+            <small>{d.maxPerDay > 1 ? `Can be done up to ${d.maxPerDay} times a day — stars each time` : "Done once (set 2+ for things like \"read a book\")"}</small>
+          </span>
+          <StarStepper value={d.maxPerDay} onChange={(n) => set({ maxPerDay: n })} min={1} max={20} icon="✕" label="Times per day" />
+        </div>
+      )}
 
       <Field label="Assign to">
         {isChore && <ToggleRow label="Up for Grabs" hint="Anyone can do it — whoever does gets the stars" on={d.upForGrabs} onChange={(v) => set({ upForGrabs: v, profileIds: v ? [] : d.profileIds })} icon={<span style={{ fontSize: 24 }}>🏠</span>} />}
@@ -316,18 +328,32 @@ export function TaskForm({
   );
 }
 
-export function StarStepper({ value, onChange, min = 0, max = 500 }: { value: number; onChange: (n: number) => void; min?: number; max?: number }) {
+export function StarStepper({
+  value,
+  onChange,
+  min = 0,
+  max = 500,
+  icon = "⭐",
+  label = "Stars",
+}: {
+  value: number;
+  onChange: (n: number) => void;
+  min?: number;
+  max?: number;
+  icon?: string;
+  label?: string;
+}) {
   const clamp = (n: number) => Math.max(min, Math.min(max, Math.round(n)));
   return (
     <div className="tasks-stepper">
-      <button type="button" className="icon-btn" aria-label="Fewer stars" onClick={() => onChange(clamp(value - 1))} disabled={value <= min}>
+      <button type="button" className="icon-btn" aria-label={`Fewer ${label.toLowerCase()}`} onClick={() => onChange(clamp(value - 1))} disabled={value <= min}>
         <Minus />
       </button>
       <span className="tasks-stepper-val">
-        <span aria-hidden>⭐</span>
-        <input type="number" min={min} max={max} value={value} aria-label="Stars" onChange={(e) => onChange(clamp(Number(e.target.value) || 0))} />
+        <span aria-hidden>{icon}</span>
+        <input type="number" min={min} max={max} value={value} aria-label={label} onChange={(e) => onChange(clamp(Number(e.target.value) || 0))} />
       </span>
-      <button type="button" className="icon-btn" aria-label="More stars" onClick={() => onChange(clamp(value + 1))} disabled={value >= max}>
+      <button type="button" className="icon-btn" aria-label={`More ${label.toLowerCase()}`} onClick={() => onChange(clamp(value + 1))} disabled={value >= max}>
         <Plus />
       </button>
     </div>

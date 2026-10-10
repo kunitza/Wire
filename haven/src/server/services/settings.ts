@@ -124,7 +124,10 @@ export function updateSettings(ctx: Ctx, patch: Record<string, unknown>) {
     if (!(k in patch)) continue;
     const v = patch[k];
     const d = DEFAULTS[k];
-    if (d && typeof d === "object" && !Array.isArray(d) && v && typeof v === "object") {
+    const isGroup = !!d && typeof d === "object" && !Array.isArray(d);
+    // A group of settings (calendar, lock, ...) can only be patched with an object; anything else would break every screen.
+    if (isGroup && (!v || typeof v !== "object" || Array.isArray(v))) throw new Error(`Invalid ${k} settings`);
+    if (isGroup) {
       // Only known sub-keys are stored; computed fields (hasPin, tokenSet, ...) are dropped.
       const cur = read(ctx, k) as Record<string, unknown>;
       const next: Record<string, unknown> = { ...cur };
@@ -139,14 +142,38 @@ export function updateSettings(ctx: Ctx, patch: Record<string, unknown>) {
 
 // ---- Parental lock / sessions ----
 
+/** Setting a new PIN also signs out every unlocked or "remembered" device, so an old PIN stops working everywhere. */
 export function setPin(ctx: Ctx, pin: string) {
   if (!/^\d{4}$/.test(pin)) throw new Error("PIN must be 4 digits");
   ctx.settings.set("pinHash", hashSecret(pin));
+  ctx.settings.delete("pinFailures");
+  ctx.db.prepare("UPDATE sessions SET unlocked_until = NULL").run();
   ctx.bus.emit("settings");
 }
 
 export function checkPin(ctx: Ctx, pin: string): boolean {
   return verifySecret(pin, ctx.settings.get<string | null>("pinHash", null));
+}
+
+/** Wrong PINs allowed before a pause; each further batch doubles the pause (1, 2, 4 … 60 minutes). */
+const PIN_TRIES = 5;
+
+/**
+ * Check a PIN typed on any screen, with a household-wide back-off so the 10,000 possible PINs can't
+ * simply be tried one after another. Returns `{ ok }`, or `{ ok: false, retryInSeconds }` while paused.
+ */
+export function tryPin(ctx: Ctx, pin: string): { ok: boolean; retryInSeconds?: number } {
+  const f = ctx.settings.get<{ count: number; until: string | null }>("pinFailures", { count: 0, until: null });
+  const now = ctx.now();
+  if (f.until && f.until > now.toISOString()) return { ok: false, retryInSeconds: Math.ceil((Date.parse(f.until) - now.getTime()) / 1000) };
+  if (checkPin(ctx, pin)) {
+    if (f.count) ctx.settings.delete("pinFailures");
+    return { ok: true };
+  }
+  const count = f.count + 1;
+  const pauseMinutes = count % PIN_TRIES === 0 ? Math.min(60, 2 ** (count / PIN_TRIES - 1)) : 0;
+  ctx.settings.set("pinFailures", { count, until: pauseMinutes ? new Date(now.getTime() + pauseMinutes * 60000).toISOString() : null });
+  return { ok: false };
 }
 
 export function newSessionToken(ctx: Ctx): string {
@@ -193,10 +220,14 @@ export function sessionInfo(ctx: Ctx, token: string | undefined): SessionInfo {
   return { canEdit: !lockEnabled || unlocked, lockEnabled, unlockedUntil: unlocked ? until : null };
 }
 
-/** Whether an add (or modify) action is allowed for this browser under the lock settings. */
-export function mayEdit(ctx: Ctx, token: string | undefined, action: "add" | "modify"): boolean {
+/**
+ * Whether an add (or modify) action is allowed for this browser under the lock settings. "admin" actions
+ * (Parental Lock itself, secrets, backups) always need an unlocked browser while the lock is on.
+ */
+export function mayEdit(ctx: Ctx, token: string | undefined, action: "add" | "modify" | "admin"): boolean {
   const info = sessionInfo(ctx, token);
   if (info.canEdit) return true;
+  if (action === "admin") return false;
   const lock = read(ctx, "lock");
   return action === "add" ? !lock.lockAdd : !lock.lockModify;
 }

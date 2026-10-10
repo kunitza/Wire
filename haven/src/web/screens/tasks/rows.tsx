@@ -24,6 +24,28 @@ export function TaskCheck({ inst, color, size = 44, ctl }: { inst: TaskInstance;
         <SkipForward size={size * 0.42} />
       </button>
     );
+  const max = inst.task.maxPerDay || 1;
+  if (max > 1 && inst.status !== "done") {
+    // Repeatable chore: a ring that fills a step each time, with the count inside.
+    return (
+      <button
+        type="button"
+        className="tasks-multi-check"
+        aria-label={`Complete ${inst.task.title} (${inst.count} of ${max} done)`}
+        onClick={(e) => {
+          e.stopPropagation();
+          ctl.toggle(inst);
+        }}
+        style={{ width: size, height: size }}
+      >
+        <ProgressRing size={size} value={inst.count / max} color={color} track="rgba(0,0,0,0.06)" stroke={4}>
+          <span style={{ position: "relative", fontWeight: 700, fontSize: size * 0.32, color: inst.count ? "#1f1f1f" : "#9f9f9f" }}>
+            {inst.count}/{max}
+          </span>
+        </ProgressRing>
+      </button>
+    );
+  }
   return <CheckCircle done={inst.status === "done"} color={color} size={size} onClick={() => ctl.toggle(inst)} label={`${inst.status === "done" ? "Undo" : "Complete"} ${inst.task.title}`} />;
 }
 

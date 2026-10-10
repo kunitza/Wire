@@ -207,8 +207,8 @@ export function MagicImportDialog({
               {settings.email.address}
             </div>
             <div style={{ lineHeight: 1.45 }}>
-              Put names in the subject, e.g. <b>“Emma, Jake”</b>, to choose who the events are for. Events from email are added straight to the calendar and show up under Recent imports, where you
-              can undo them.
+              Put names in the subject, e.g. <b>“Emma, Jake”</b>, to choose who the events are for. Events from the allowed senders in Settings are added straight to the calendar and show up under Recent
+              imports, where you can undo them; emails from anyone else wait there for your review.
             </div>
           </div>
         ) : (

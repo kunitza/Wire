@@ -18,6 +18,10 @@ export interface ParsedEvent {
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
+/** Most occurrences one repeating event may expand to in the sync window. */
+const MAX_OCCURRENCES = 5000;
+/** Largest calendar feed Haven downloads. */
+const MAX_FEED_BYTES = 25 * 1024 * 1024;
 
 /** Absolute instant -> household-local wall clock "YYYY-MM-DDTHH:MM" (process TZ). */
 function wall(d: Date): string {
@@ -151,6 +155,9 @@ export function expandIcs(body: string, from: string, to: string): ParsedEvent[]
     // Identity of an occurrence: its date (all-day) or its absolute start minute.
     const keyOf = (d: Date) => (allDay ? localDateOf(d) : d.toISOString().slice(0, 16));
     const orig = { ...ev.rrule.origOptions };
+    // Calendar apps only repeat hourly or slower; a minutely/secondly rule (e.g. from a hostile invitation) would
+    // expand into millions of occurrences and stall the Pi.
+    if (orig.freq !== undefined && orig.freq > RRule.HOURLY) continue;
     delete orig.dtstart;
     delete orig.tzid;
     if (orig.until) orig.until = floating(allDay ? localDateOf(orig.until) + "T23:59" : toWallZ(orig.until));
@@ -161,7 +168,7 @@ export function expandIcs(body: string, from: string, to: string): ParsedEvent[]
       continue;
     }
     const spanDays = Math.ceil(durMin / 1440) + 2;
-    const starts = rule.between(floating(addDays(from, -spanDays) + "T00:00"), floating(addDays(to, 1) + "T00:00"), true);
+    const starts = rule.between(floating(addDays(from, -spanDays) + "T00:00"), floating(addDays(to, 1) + "T00:00"), true, (_d, i) => i < MAX_OCCURRENCES);
 
     const exKeys = new Set<string>();
     for (const x of Object.values((ev.exdate ?? {}) as Record<string, Date>)) if (x instanceof Date) exKeys.add(keyOf(x));
@@ -243,9 +250,14 @@ export function listCalendars(ctx: Ctx, mask = true): SyncedCalendar[] {
   }));
 }
 
-export function addCalendar(ctx: Ctx, input: { name: string; url: string; profileIds: number[]; color?: string | null }) {
-  const url = input.url.trim();
+function checkCalendarUrl(raw: string | undefined): string {
+  const url = (raw ?? "").trim();
   if (!/^(https?|webcal):\/\//i.test(url)) throw new Error("Paste the calendar's secret address in iCal format (it starts with https://)");
+  return url;
+}
+
+export function addCalendar(ctx: Ctx, input: { name: string; url: string; profileIds: number[]; color?: string | null }) {
+  const url = checkCalendarUrl(input.url);
   const res = ctx.db
     .prepare("INSERT INTO calendars (name, url, profile_ids, color) VALUES (?, ?, ?, ?)")
     .run(input.name.trim() || "Google Calendar", url, JSON.stringify(input.profileIds ?? []), input.color ?? null);
@@ -260,7 +272,7 @@ export function updateCalendar(ctx: Ctx, id: number, patch: { name?: string; pro
     .prepare("UPDATE calendars SET name = ?, url = ?, profile_ids = ?, color = ?, enabled = ? WHERE id = ?")
     .run(
       patch.name?.trim() || cur.name,
-      patch.url?.trim() || cur.url,
+      patch.url?.trim() ? checkCalendarUrl(patch.url) : cur.url,
       JSON.stringify(patch.profileIds ?? cur.profileIds),
       patch.color === undefined ? cur.color : patch.color,
       patch.enabled === undefined ? (cur.enabled ? 1 : 0) : patch.enabled ? 1 : 0,
@@ -279,7 +291,9 @@ export type Fetcher = (url: string) => Promise<string>;
 const defaultFetcher: Fetcher = async (url) => {
   const res = await fetch(url.replace(/^webcal:/i, "https:"), { signal: AbortSignal.timeout(30000) });
   if (!res.ok) throw new Error(`Calendar server replied ${res.status} ${res.statusText}`);
+  if (Number(res.headers.get("content-length") ?? 0) > MAX_FEED_BYTES) throw new Error("That calendar is too big to sync");
   const body = await res.text();
+  if (body.length > MAX_FEED_BYTES) throw new Error("That calendar is too big to sync");
   if (!body.includes("BEGIN:VCALENDAR")) throw new Error("That address didn't return a calendar. Use the 'Secret address in iCal format'.");
   return body;
 };

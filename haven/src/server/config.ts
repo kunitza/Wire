@@ -19,5 +19,9 @@ export function loadConfig(env = process.env): Config {
     displayOffCmd: env.HAVEN_DISPLAY_OFF_CMD || null,
     displayOnCmd: env.HAVEN_DISPLAY_ON_CMD || null,
     disableBackground: env.HAVEN_NO_BACKGROUND === "1",
+    allowedHosts: (env.HAVEN_ALLOWED_HOSTS ?? "")
+      .split(",")
+      .map((h) => h.trim().toLowerCase())
+      .filter(Boolean),
   };
 }

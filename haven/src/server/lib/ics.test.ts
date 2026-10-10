@@ -89,3 +89,12 @@ END:VCALENDAR`;
     ]);
   });
 });
+
+describe("expandIcs limits", () => {
+  it("ignores minutely rules and caps how many occurrences one event expands to", () => {
+    const feed = (rule: string) =>
+      ["BEGIN:VCALENDAR", "BEGIN:VEVENT", "UID:x", "DTSTART:20261001T120000Z", "DTEND:20261001T121500Z", "SUMMARY:Spam", rule, "END:VEVENT", "END:VCALENDAR"].join("\r\n");
+    expect(expandIcs(feed("RRULE:FREQ=MINUTELY"), "2026-10-01", "2027-10-01")).toHaveLength(0);
+    expect(expandIcs(feed("RRULE:FREQ=HOURLY"), "2026-10-01", "2027-10-01").length).toBeLessThanOrEqual(5000);
+  });
+});

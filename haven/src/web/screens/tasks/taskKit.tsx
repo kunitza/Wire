@@ -135,6 +135,7 @@ export function TaskChips({ inst }: { inst: TaskInstance }) {
 interface Override {
   status: TaskInstance["status"];
   completedBy: number | null;
+  count?: number;
   settled: boolean;
 }
 
@@ -174,7 +175,7 @@ export function useTaskController(from: string, to: string): TaskController {
     () =>
       data?.map((i) => {
         const o = ov.get(instKey(i));
-        return o ? { ...i, status: o.status, completedBy: o.completedBy } : i;
+        return o ? { ...i, status: o.status, completedBy: o.completedBy, count: o.count ?? i.count } : i;
       }),
     [data, ov],
   );
@@ -238,10 +239,18 @@ export function useTaskController(from: string, to: string): TaskController {
   const setStatus = useCallback(
     async (inst: TaskInstance, status: "done" | "skipped" | "open", creditTo?: number) => {
       const body = { occurrence: inst.occurrence, part: inst.part, slot: inst.profileId };
-      if (status === "open") return mutate(inst, { status: "open", completedBy: null }, () => post(`/api/tasks/${inst.task.id}/uncomplete`, body));
-      if (status === "done") afterDone(inst);
-      return mutate(inst, { status, completedBy: status === "done" ? (inst.profileId ?? creditTo ?? null) : null }, () =>
-        post(`/api/tasks/${inst.task.id}/complete`, { ...body, creditTo: creditTo ?? null, day: inst.date, status }),
+      const max = inst.task.maxPerDay || 1;
+      const count = inst.count ?? 0;
+      if (status === "open") {
+        // Repeatable chores undo one completion at a time.
+        const left = Math.max(0, count - 1);
+        return mutate(inst, { status: "open", completedBy: left ? inst.completedBy : null, count: left }, () => post(`/api/tasks/${inst.task.id}/uncomplete`, body));
+      }
+      const nextCount = status === "done" ? count + 1 : count;
+      const final = status === "done" && nextCount < max ? "open" : status;
+      if (final === "done") afterDone(inst);
+      return mutate(inst, { status: final, completedBy: status === "done" ? (inst.profileId ?? creditTo ?? inst.completedBy ?? null) : null, count: nextCount }, () =>
+        post(`/api/tasks/${inst.task.id}/complete`, { ...body, creditTo: creditTo ?? inst.completedBy ?? null, day: inst.date, status }),
       );
     },
     [afterDone, mutate],
@@ -250,7 +259,8 @@ export function useTaskController(from: string, to: string): TaskController {
   const toggle = useCallback(
     (inst: TaskInstance) => {
       if (inst.status !== "open") return void setStatus(inst, "open");
-      if (inst.profileId === null) return setWho(inst);
+      // Repeatable Up For Grabs chore already started: keep crediting the same person.
+      if (inst.profileId === null && !(inst.count > 0 && inst.completedBy)) return setWho(inst);
       void setStatus(inst, "done");
     },
     [setStatus],
@@ -278,6 +288,10 @@ export function useTaskController(from: string, to: string): TaskController {
           onToggle={(i) => {
             setDetails(null);
             toggle(i);
+          }}
+          onUncount={(i) => {
+            setDetails(null);
+            void setStatus(i, "open");
           }}
           onSkip={(i) => {
             setDetails(null);
@@ -350,6 +364,7 @@ function TaskDetails({
   anchor,
   onClose,
   onToggle,
+  onUncount,
   onSkip,
   onEdit,
   onDelete,
@@ -358,6 +373,7 @@ function TaskDetails({
   anchor: HTMLElement;
   onClose: () => void;
   onToggle: (i: TaskInstance) => void;
+  onUncount: (i: TaskInstance) => void;
   onSkip: (i: TaskInstance) => void;
   onEdit: (i: TaskInstance) => void;
   onDelete: (i: TaskInstance) => void;
@@ -442,8 +458,22 @@ function TaskDetails({
           onClick={() => onToggle(inst)}
         >
           {inst.status === "open" ? <Check /> : <Undo2 />}
-          {inst.status === "open" ? "Mark as Complete" : inst.status === "done" ? "Mark as Incomplete" : "Mark as Complete"}
+          {inst.status === "open"
+            ? inst.task.maxPerDay > 1
+              ? `Done ${inst.count > 0 ? "again" : ""} (${inst.count + 1} of ${inst.task.maxPerDay})`
+              : "Mark as Complete"
+            : inst.status === "done"
+              ? inst.task.maxPerDay > 1
+                ? "Undo one"
+                : "Mark as Incomplete"
+              : "Mark as Complete"}
         </button>
+        {inst.status === "open" && inst.count > 0 && (
+          <button className="pill block" onClick={() => onUncount(inst)}>
+            <Undo2 />
+            Undo one ({inst.count} of {inst.task.maxPerDay} done)
+          </button>
+        )}
         <div className="row" style={{ gap: 8 }}>
           {canSkip && inst.status !== "done" && (
             <button className="pill grow" onClick={() => onSkip(inst)}>

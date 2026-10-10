@@ -7,7 +7,7 @@
 - ❌ not built (by choice)
 
 **How each feature was verified**
-- **Automated:** covered by the test suite. That's 36 server tests (`npm test`) and 12 browser tests (`npm run test:e2e`) driving the real app in Chromium.
+- **Automated:** covered by the test suite. That's 55 server tests (`npm test`) and 12 browser tests (`npm run test:e2e`) driving the real app in Chromium.
 - **Visual:** checked by comparing screenshots against Skylight's own help-center screenshots at 1920×1080, 1280×800 and phone size.
 
 ## Home and calendar (#1–6)
@@ -96,6 +96,11 @@
 | — | Reminders | ✅ | Popup with a chime for events (at time and/or minutes before) and timed chores |
 | — | Display settings | ✅ | Text size Small/Medium/Large, density Cozy/Snug, 12/24h, °F/°C, display name instead of date |
 | — | Backups | ➕ | Nightly automatic database backups (keeps 14), plus Download Backup |
+| — | Kitchen timers | ➕ | Several named timers. Set by touch, Siri or Claude. They ring and flash on the wall display until dismissed, with +1 minute, pause and resume. |
+| — | Repeatable chores | ➕ | "Up to N times a day" chores with stars each time, a progress ring, and "undo one" |
+| — | Hourly weather | ➕ | Tap the header or a calendar day's weather for a 10-day forecast, hourly detail, sunrise and sunset |
+| — | Claude connector | ➕ | MCP server for Claude Code and Claude Desktop on the home network, with a token and household-only tools |
+| — | On-screen keyboard | ➕ | Big touch keyboard on the wall display, since the Pi has no physical keyboard |
 | — | Data ownership | ➕ | Everything stays on your Pi. No subscription. AI costs pennies per use from your own API key, with a monthly budget cap. |
 
 **Parental Lock (#19)**

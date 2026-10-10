@@ -104,6 +104,8 @@ export interface Task {
   /** Routines only: which parts of the day the routine appears in. */
   parts: DayPart[];
   trackHabit: boolean;
+  /** Chores only: how many times it can be done per day (each time earns its stars). Default 1. */
+  maxPerDay: number;
   sort: number;
 }
 
@@ -121,6 +123,8 @@ export interface TaskInstance {
   completedAt: string | null;
   late: boolean;
   streak: number;
+  /** Times done so far for repeatable chores (status is "done" once it reaches task.maxPerDay). */
+  count: number;
 }
 
 export interface Reward {
@@ -211,7 +215,9 @@ export interface Recipe {
 
 export interface Weather {
   current: { temp: number; code: number; isDay: boolean } | null;
-  daily: { date: string; code: number; max: number; min: number; precip: number }[];
+  daily: { date: string; code: number; max: number; min: number; precip: number; sunrise?: string; sunset?: string }[];
+  /** Next ~48 hours: local "YYYY-MM-DDTHH:MM". */
+  hourly?: { time: string; temp: number; code: number; precip: number; isDay: boolean }[];
   units: "fahrenheit" | "celsius";
   updatedAt: string | null;
 }
@@ -297,4 +303,17 @@ export type ChangeTopic =
   | "recipes"
   | "settings"
   | "weather"
-  | "imports";
+  | "imports"
+  | "timers";
+
+export interface KitchenTimer {
+  id: number;
+  label: string;
+  durationSec: number;
+  /** When it rings (running timers); null while paused. */
+  endsAt: string | null;
+  remainingSec: number;
+  running: boolean;
+  done: boolean;
+  createdAt: string;
+}

@@ -14,6 +14,8 @@ export interface Config {
   displayOnCmd: string | null;
   /** Disable background timers (calendar sync, weather, email) - used by tests. */
   disableBackground: boolean;
+  /** Extra host names (besides IPs, localhost, *.local, *.ts.net, ...) the web UI may be opened under. */
+  allowedHosts?: string[];
 }
 
 type Listener = (topics: ChangeTopic[]) => void;
